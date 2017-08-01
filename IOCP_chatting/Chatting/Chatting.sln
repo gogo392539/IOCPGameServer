@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "iocp_chat", "iocp_chat\iocp_chat.vcxproj", "{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Debug|x64.ActiveCfg = Debug|x64
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Debug|x64.Build.0 = Debug|x64
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Debug|x86.ActiveCfg = Debug|Win32
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Debug|x86.Build.0 = Debug|Win32
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Release|x64.ActiveCfg = Release|x64
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Release|x64.Build.0 = Release|x64
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Release|x86.ActiveCfg = Release|Win32
+		{F9CC46A3-4BDE-447F-8490-EA42266B5CE0}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
