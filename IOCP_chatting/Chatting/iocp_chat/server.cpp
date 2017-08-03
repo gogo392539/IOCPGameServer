@@ -11,9 +11,9 @@ using namespace std;
 
 enum IOTYPE { ZERORECV, RECV, SEND, ID_SEND, NICK_RECV, JOIN_SEND };
 /*
-ID_SEND : client Á¢¼Ó½Ã id Àü´Þ
-NICK_RECV : client°¡ º¸³½ nickname ¼ö½Å
-JOIN_SEND : »õ·Î¿î client°¡ Á¢¼ÓÇÏ¸é ID¿Í nicknameÀ» ¸ðµç client¿¡°Ô Àü´Þ
+ID_SEND : client ì ‘ì†ì‹œ id ì „ë‹¬
+NICK_RECV : clientê°€ ë³´ë‚¸ nickname ìˆ˜ì‹ 
+JOIN_SEND : ìƒˆë¡œìš´ clientê°€ ì ‘ì†í•˜ë©´ IDì™€ nicknameì„ ëª¨ë“  clientì—ê²Œ ì „ë‹¬
 */
 
 #pragma pack(push, 1)   
@@ -49,7 +49,7 @@ void errorHandler(char* message);
 
 int main(void) {
 	WSAData wsaData;
-	HANDLE hCompletionPort;
+	//HANDLE hCompletionPort;
 	SOCKET hServSock;
 	SOCKADDR_IN servAddr;
 	PER_HANDLE_DATA * PerHandleData;
@@ -62,7 +62,7 @@ int main(void) {
 		errorHandler("WSAStartup error");
 	}
 
-	hCompletionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 5);
+	cpm->ComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 5);
 
 	for (int i = 0; i < 5; i++) {
 		_beginthreadex(NULL, 0, CompletionThread, (LPVOID)cpm, 0, NULL);
@@ -103,7 +103,7 @@ int main(void) {
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
 		cpm->clients[clientNum++] = PerHandleData;
 
-		CreateIoCompletionPort((HANDLE)hClntSock, hCompletionPort, (DWORD)PerHandleData, 0);
+		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
 
 		PerIoData = new PER_IO_DATA;
 		memset((LPOVERLAPPED)&PerIoData, 0, sizeof(OVERLAPPED));
@@ -132,7 +132,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, (LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
 		/*if (BytesTransferred == 0) {
-			cout << "client Á¾·á" << endl;
+			cout << "client ì¢…ë£Œ" << endl;
 			closesocket(PerHandleData->hClntSock);
 			delete PerHandleData;
 			delete PerIoData;
