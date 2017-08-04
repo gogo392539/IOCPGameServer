@@ -2,23 +2,18 @@
 #include <process.h>
 #include <string>
 #include <WinSock2.h>
-#include <vector>
+#include <algorithm>
 
 #define DEFAULT_PORT 20001
-#define DEFAULT_BUF 512
+#define DEFAULT_BUF 256
 
 using namespace std;
 
-enum IOTYPE { ZERORECV, RECV, SEND, ID_SEND, NICK_RECV, JOIN_SEND };
-/*
-ID_SEND : client 접속시 id 전달
-NICK_RECV : client가 보낸 nickname 수신
-JOIN_SEND : 새로운 client가 접속하면 ID와 nickname을 모든 client에게 전달
-*/
+enum IOTYPE { IDALLOC, RECV, SEND };
 
 #pragma pack(push, 1)   
 struct chatPacket {
-	char len;
+	//char len;
 	char id;
 	char message[256];
 };
@@ -63,7 +58,7 @@ int main(void) {
 		errorHandler("WSAStartup error");
 	}
 
-	cpm->ComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 5);
+	cpm->ComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	SYSTEM_INFO systemInfo;
 	GetSystemInfo(&systemInfo);
 
@@ -114,8 +109,8 @@ int main(void) {
 		PerIoData = new PER_IO_DATA;
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
-		PerIoData->wsaRecvBuf.buf = nullptr;
-		PerIoData->operationType = IOTYPE::ZERORECV;
+		PerIoData->wsaRecvBuf.buf = PerIoData->recvBuffer;
+		PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
@@ -135,6 +130,9 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 	PER_HANDLE_DATA* PerHandleData;
 	PER_IO_DATA* PerIoData;
 
+	int recvBytes;
+	chatPacket packet;
+
 
 	DWORD RecvBytes = 0;
 	while (1) {
@@ -147,29 +145,33 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			delete PerHandleData;
 			delete PerIoData;
 		}*/
+		recvBytes = 0;
 
 		switch (PerIoData->operationType)
 		{
-		case IOTYPE::ZERORECV:
+		case IOTYPE::IDALLOC:
 			while (true) {
-				recv(PerHandleData->hClntSock, PerIoData->recvBuffer, DEFAULT_BUF, 0);
+				recvBytes += recv(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, DEFAULT_BUF, 0);
 				if (WSAGetLastError() == WSAEWOULDBLOCK) {
-					PerIoData->recvBuffer[511] = '\0';
-					cout << PerIoData->recvBuffer << endl;
+
+					copy(PerIoData->recvBuffer, PerIoData->recvBuffer + recvBytes, &packet);
+					//memcpy(&packet, PerIoData->recvBuffer, DEFAULT_BUF);
+					packet.message[recvBytes - 1] = '\0';
+					cout << packet.message << endl;
+					packet.id = cpm->clients[PerHandleData->id]->id;
+
 					memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+					PerIoData->wsaSendBuf.len = recvBytes;
+					copy(&packet, &packet + recvBytes, PerIoData->sendBuffer);
+					//memcpy(PerIoData->sendBuffer, &packet, recvBytes);
+					PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
 
-					PerIoData->wsaRecvBuf.len = 0;
-					PerIoData->wsaRecvBuf.buf = NULL;
+					WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
+					
 
-					PerIoData->operationType = IOTYPE::ZERORECV;
-					WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
-						&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
 					break;
 				}
 			}
-			//PerIoData->recvBuffer[511] = '\0';
-			//recv(PerHandleData->hClntSock, PerIoData->recvBuffer, DEFAULT_BUF, 0);
-			//cout << PerIoData->recvBuffer << endl;
 			break;
 		case IOTYPE::RECV:
 
@@ -180,6 +182,17 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		default:
 			break;
 		}
+
+		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+		PerIoData->wsaRecvBuf.len = 0;
+		PerIoData->wsaRecvBuf.buf = NULL;
+		PerIoData->operationType = IOTYPE::IDALLOC;
+
+		Flags = 0;
+
+		WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
+			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
+		
 
 	}
 
