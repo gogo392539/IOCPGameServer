@@ -31,7 +31,8 @@ struct PER_HANDLE_DATA {
 	string nickname;
 };
 
-struct PER_IO_DATA : OVERLAPPED {
+struct PER_IO_DATA {
+	OVERLAPPED overlapped;
 	char recvBuffer[DEFAULT_BUF];
 	char sendBuffer[DEFAULT_BUF];
 	WSABUF wsaRecvBuf;
@@ -63,10 +64,11 @@ int main(void) {
 	}
 
 	cpm->ComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 5);
+	SYSTEM_INFO systemInfo;
+	GetSystemInfo(&systemInfo);
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < (systemInfo.dwNumberOfProcessors + 5); i++)
 		_beginthreadex(NULL, 0, CompletionThread, (LPVOID)cpm, 0, NULL);
-	}
 
 	hServSock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 
@@ -83,21 +85,25 @@ int main(void) {
 		errorHandler("listen error");
 	}
 
+	DWORD RecvBytes;
+	DWORD Flags;
+	int clientNum = 0;
 	while (1) {
 
 		SOCKET hClntSock;
 		SOCKADDR_IN clntAddr;
 		int clntAddrSz = sizeof(clntAddr);
-		DWORD RecvBytes;
-		DWORD Flags;
-		int clientNum = 0;
+
 
 		hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSz);
-		if (hClntSock == SOCKET_ERROR) {
+		/*if (hClntSock == SOCKET_ERROR) {
 			cout << "accept error" << endl;
 			continue;
-		}
-
+		}*/
+		u_long mode = 1;
+		ioctlsocket(hClntSock, FIONBIO, &mode);
+		/*if (WSAGetLastError() != WSAEWOULDBLOCK)
+			errorHandler("accept error");*/
 		PerHandleData = new PER_HANDLE_DATA;
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
@@ -106,14 +112,15 @@ int main(void) {
 		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
 
 		PerIoData = new PER_IO_DATA;
-		memset((LPOVERLAPPED)&PerIoData, 0, sizeof(OVERLAPPED));
+		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
-		PerIoData->wsaRecvBuf.buf = PerIoData->recvBuffer;
+		PerIoData->wsaRecvBuf.buf = nullptr;
 		PerIoData->operationType = IOTYPE::ZERORECV;
 
 		Flags = 0;
 
-		WSARecv(hClntSock, &PerIoData->wsaRecvBuf, 1, &RecvBytes, &Flags, (LPOVERLAPPED)&PerIoData, NULL);
+		WSARecv(hClntSock, &PerIoData->wsaRecvBuf, 1,
+			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
 	}
 
 	WSACleanup();
@@ -128,8 +135,11 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 	PER_HANDLE_DATA* PerHandleData;
 	PER_IO_DATA* PerIoData;
 
+
+	DWORD RecvBytes = 0;
 	while (1) {
-		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, (LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
+		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
+			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
 		/*if (BytesTransferred == 0) {
 			cout << "client 종료" << endl;
@@ -141,7 +151,25 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		switch (PerIoData->operationType)
 		{
 		case IOTYPE::ZERORECV:
-			
+			while (true) {
+				recv(PerHandleData->hClntSock, PerIoData->recvBuffer, DEFAULT_BUF, 0);
+				if (WSAGetLastError() == WSAEWOULDBLOCK) {
+					PerIoData->recvBuffer[511] = '\0';
+					cout << PerIoData->recvBuffer << endl;
+					memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+
+					PerIoData->wsaRecvBuf.len = 0;
+					PerIoData->wsaRecvBuf.buf = NULL;
+
+					PerIoData->operationType = IOTYPE::ZERORECV;
+					WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
+						&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
+					break;
+				}
+			}
+			//PerIoData->recvBuffer[511] = '\0';
+			//recv(PerHandleData->hClntSock, PerIoData->recvBuffer, DEFAULT_BUF, 0);
+			//cout << PerIoData->recvBuffer << endl;
 			break;
 		case IOTYPE::RECV:
 
@@ -152,9 +180,6 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		default:
 			break;
 		}
-
-
-
 
 	}
 
