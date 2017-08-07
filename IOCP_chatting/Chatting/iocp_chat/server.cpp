@@ -5,7 +5,8 @@
 #include <algorithm>
 
 #define DEFAULT_PORT 20001
-#define DEFAULT_BUF 256
+#define DEFAULT_BUF 257
+#define FLAG_BUF 2
 
 using namespace std;
 
@@ -13,7 +14,7 @@ enum IOTYPE { IDALLOC, RECV, SEND };
 
 #pragma pack(push, 1)   
 struct chatPacket {
-	//char len;
+	char len;
 	char id;
 	char message[256];
 };
@@ -28,8 +29,8 @@ struct PER_HANDLE_DATA {
 
 struct PER_IO_DATA {
 	OVERLAPPED overlapped;
-	char recvBuffer[DEFAULT_BUF];
-	char sendBuffer[DEFAULT_BUF];
+	chatPacket recvPacket;
+	chatPacket sendPacket;
 	WSABUF wsaRecvBuf;
 	WSABUF wsaSendBuf;
 	IOTYPE operationType;
@@ -42,6 +43,7 @@ struct CompletionPortMember {
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
+int recvn(SOCKET socket, char* buf, int len, int flag);
 
 int main(void) {
 	WSAData wsaData;
@@ -52,7 +54,7 @@ int main(void) {
 	PER_IO_DATA * PerIoData;
 	CompletionPortMember* cpm = new CompletionPortMember;
 
-	//int clientNum = 0;
+	int nZero;
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
 		errorHandler("WSAStartup error");
@@ -91,25 +93,37 @@ int main(void) {
 
 
 		hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSz);
-		/*if (hClntSock == SOCKET_ERROR) {
-			cout << "accept error" << endl;
-			continue;
-		}*/
+
+		/* 
+		setsockopt() 함수를 통해 send와 recv의 커널 단 버퍼의 크기를 0으로 만들고 있다.
+		IOCP가 Overlapped IO에 대한 결과를 통보 받는 메커니즘이기 때문에 커널단 버퍼를 사용하지 않고
+		직접 제공된 버퍼를 사용한다.
+		*/
+		nZero = 0;
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (const char*)&nZero, sizeof(int))) {
+			errorHandler("setsockopt error");
+		}
+
+		nZero = 0;
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (const char*)&nZero, sizeof(int))) {
+			errorHandler("setsockopt error");
+		}
+		
 		u_long mode = 1;
 		ioctlsocket(hClntSock, FIONBIO, &mode);
-		/*if (WSAGetLastError() != WSAEWOULDBLOCK)
-			errorHandler("accept error");*/
+		
 		PerHandleData = new PER_HANDLE_DATA;
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
-		cpm->clients[clientNum++] = PerHandleData;
+		PerHandleData->id = clientNum;
+		cpm->clients[clientNum++] = PerHandleData;		// client socket, socketaddr, client id, client nickname을 저장
 
 		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
 
 		PerIoData = new PER_IO_DATA;
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
-		PerIoData->wsaRecvBuf.buf = PerIoData->recvBuffer;
+		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
 		PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
@@ -131,47 +145,54 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 	PER_IO_DATA* PerIoData;
 
 	int recvBytes;
+	int messageLen, id;
+	string tempNick;
 	chatPacket packet;
 
 
 	DWORD RecvBytes = 0;
 	while (1) {
+		recvBytes = 0;
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
 			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
-		/*if (BytesTransferred == 0) {
-			cout << "client 종료" << endl;
-			closesocket(PerHandleData->hClntSock);
-			delete PerHandleData;
-			delete PerIoData;
-		}*/
-		recvBytes = 0;
+		
 
 		switch (PerIoData->operationType)
 		{
 		case IOTYPE::IDALLOC:
-			while (true) {
-				recvBytes += recv(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, DEFAULT_BUF, 0);
-				if (WSAGetLastError() == WSAEWOULDBLOCK) {
+			
+			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, 2, 0);
+			messageLen = (int)PerIoData->recvPacket.len;		//message의 길이 저장
 
-					copy(PerIoData->recvBuffer, PerIoData->recvBuffer + recvBytes, &packet);
-					//memcpy(&packet, PerIoData->recvBuffer, DEFAULT_BUF);
-					packet.message[recvBytes - 1] = '\0';
-					cout << packet.message << endl;
-					packet.id = cpm->clients[PerHandleData->id]->id;
+			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, messageLen, 0);
+			
 
-					memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
-					PerIoData->wsaSendBuf.len = recvBytes;
-					copy(&packet, &packet + recvBytes, PerIoData->sendBuffer);
-					//memcpy(PerIoData->sendBuffer, &packet, recvBytes);
-					PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
+			PerIoData->recvPacket.message[messageLen] = '\0';	//message의 마지막에 null 문자 삽입
+			tempNick = PerIoData->recvPacket.message;
+			cpm->clients[PerHandleData->id]->nickname = tempNick;
+			PerIoData->recvPacket.id = cpm->clients[PerHandleData->id]->id;
 
-					WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
-					
+			cout << PerIoData->recvPacket.message << ", " << cpm->clients[PerHandleData->id]->nickname << endl;
 
-					break;
-				}
-			}
+
+
+
+				//recvBytes += 1;				// 마지막 recv에서 SOCKET_ERROR (-1)을 반환하기 때문에 +1을 해준다.
+				//PerIoData->recvPacket.message[2] = '\0';
+				//cout << PerIoData->recvPacket.message << endl;
+
+				//memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+				//PerIoData->wsaSendBuf.len = recvBytes;
+				//copy(&packet, &packet + recvBytes, (chatPacket*)PerIoData->sendBuffer);
+				//memcpy(PerIoData->sendBuffer, (char*)&packet, recvBytes);
+				//PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
+
+				//WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
+
+
+
+			
 			break;
 		case IOTYPE::RECV:
 
@@ -185,7 +206,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
-		PerIoData->wsaRecvBuf.buf = NULL;
+		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
 		PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
@@ -202,4 +223,25 @@ void errorHandler(char* message) {
 	fputs(message, stderr);
 	fputc('\n', stderr);
 	exit(1);
+}
+
+int recvn(SOCKET socket, char* buf, int len, int flag) {
+	int nleft;
+	int nrecv;
+
+	nleft = len;
+	while (nleft > 0) {
+		nrecv = recv(socket, buf, nleft, flag);
+
+		if (nrecv < 0) {
+			return (SOCKET_ERROR);        /* error */
+		}
+		else if (nrecv == 0) {
+			break;						  /*EOF*/
+		}
+
+		nleft -= nrecv;
+		buf += nrecv;
+	}
+	return (len - nleft);
 }
