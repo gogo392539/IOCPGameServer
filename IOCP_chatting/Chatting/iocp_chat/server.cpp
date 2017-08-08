@@ -1,19 +1,23 @@
-#include <iostream>
+﻿#include <iostream>
 #include <process.h>
 #include <string>
 #include <WinSock2.h>
 #include <algorithm>
+#include <mutex>
 
 #define DEFAULT_PORT 20001
 #define DEFAULT_BUF 257
 #define FLAG_BUF 2
 
+//using std::cout;
+//using std::endl;
 using namespace std;
 
 enum IOTYPE { IDALLOC, RECV, SEND };
 
 #pragma pack(push, 1)   
 struct chatPacket {
+	char flag;
 	char len;
 	char id;
 	char message[256];
@@ -24,7 +28,7 @@ struct PER_HANDLE_DATA {
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAddr;
 	int id;
-	string nickname;
+	//char nickname[32];
 };
 
 struct PER_IO_DATA {
@@ -39,7 +43,16 @@ struct PER_IO_DATA {
 struct CompletionPortMember {
 	HANDLE ComPort;
 	PER_HANDLE_DATA* clients[5];
-};
+};			
+
+#pragma pack(push, 1)
+struct clientInfo {
+	int id;
+	char nickname[32];
+};							// client들의 id와 nickname을 저장하는 구조체
+#pragma pack(pop)
+
+clientInfo clntInfo[5];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
@@ -53,6 +66,11 @@ int main(void) {
 	PER_HANDLE_DATA * PerHandleData;
 	PER_IO_DATA * PerIoData;
 	CompletionPortMember* cpm = new CompletionPortMember;
+
+	for (int i = 0; i < 5; i++) {
+		clntInfo[i].id = -1;
+		memset(clntInfo[i].nickname, 0, sizeof(clntInfo[i].nickname));
+	}
 
 	int nZero;
 
@@ -124,7 +142,7 @@ int main(void) {
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		PerIoData->operationType = IOTYPE::IDALLOC;
+		//PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
@@ -137,6 +155,7 @@ int main(void) {
 }
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
+	std::mutex mutex;
 	CompletionPortMember* cpm = (CompletionPortMember*)CompPortMem;
 	HANDLE CompletionPort = (HANDLE)cpm->ComPort;
 	DWORD BytesTransferred;
@@ -145,8 +164,8 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 	PER_IO_DATA* PerIoData;
 
 	int recvBytes;
-	int messageLen, id;
-	string tempNick;
+	int messageLen, id, flag;
+	char tempNick[32];
 	chatPacket packet;
 
 
@@ -156,65 +175,57 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
 			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
-		
+		recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, 3, 0);
+		flag = (int)PerIoData->recvPacket.flag;
+		messageLen = (int)PerIoData->recvPacket.len;
+		PerIoData->recvPacket.id = PerHandleData->id;
 
-		switch (PerIoData->operationType)
+		switch (flag)
 		{
-		case IOTYPE::IDALLOC:
+		case 0:				// client chatting
 			
-			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, 2, 0);
-			messageLen = (int)PerIoData->recvPacket.len;		//message의 길이 저장
-
-			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, messageLen, 0);
-			
-
-			PerIoData->recvPacket.message[messageLen] = '\0';	//message의 마지막에 null 문자 삽입
-			tempNick = PerIoData->recvPacket.message;
-			cpm->clients[PerHandleData->id]->nickname = tempNick;
-			PerIoData->recvPacket.id = cpm->clients[PerHandleData->id]->id;
-
-			cout << PerIoData->recvPacket.message << ", " << cpm->clients[PerHandleData->id]->nickname << endl;
-
-
-
-
-				//recvBytes += 1;				// 마지막 recv에서 SOCKET_ERROR (-1)을 반환하기 때문에 +1을 해준다.
-				//PerIoData->recvPacket.message[2] = '\0';
-				//cout << PerIoData->recvPacket.message << endl;
-
-				//memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
-				//PerIoData->wsaSendBuf.len = recvBytes;
-				//copy(&packet, &packet + recvBytes, (chatPacket*)PerIoData->sendBuffer);
-				//memcpy(PerIoData->sendBuffer, (char*)&packet, recvBytes);
-				//PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
-
-				//WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
-
-
-
 			
 			break;
-		case IOTYPE::RECV:
+		case 1:				// client enterance
+			RecvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, messageLen, 0);
 
-			break;
-		case IOTYPE::SEND:
+			mutex.lock();
+			clntInfo[PerHandleData->id].id = PerHandleData->id;
+			std::copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen, clntInfo[PerHandleData->id].nickname);
+			clntInfo[PerHandleData->id].nickname[messageLen] = '\0';
+			mutex.unlock();
 
+			cout << clntInfo[PerHandleData->id].nickname << " User에게 ID " << clntInfo[PerHandleData->id].id << " 할당" << endl;
+			//cout << clntInfo[PerHandleData->id].nickname  << clntInfo[PerHandleData->id].id  << endl;
+
+
+			PerIoData->sendPacket.flag = flag;
+			PerIoData->sendPacket.len = 0;
+			PerIoData->sendPacket.id = PerHandleData->id;
+			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, 3, 0);
+
+			std::copy((char*)&clntInfo, (char*)&clntInfo + sizeof(clntInfo), PerIoData->sendPacket.message);
+
+			/*for (int i = 0; i < 5; i++) {
+				if (clntInfo[i].id != -1) {
+					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 3 + sizeof(clntInfo), 0);
+				}
+			}*/
 			break;
 		default:
 			break;
 		}
 
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+		memset(&PerIoData->recvPacket, 0, sizeof(PerIoData->recvPacket));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		PerIoData->operationType = IOTYPE::IDALLOC;
+		//PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
 		WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
 			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
-		
-
 	}
 
 }

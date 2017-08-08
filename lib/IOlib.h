@@ -3,7 +3,7 @@
 
 #include <Winsock2.h>
 
-int sendn(SOCKET socket, const char *buf, int len, int flag);
-int recvn(SOCKET socket, char* buf, int len, int flag);
+extern int sendn(SOCKET socket, const char *buf, int len, int flag);
+extern int recvn(SOCKET socket, char* buf, int len, int flag);
 
 #endif
