@@ -151,18 +151,19 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		{
 		case IOTYPE::IDALLOC:
 			while (true) {
-				recvBytes += recv(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, DEFAULT_BUF, 0);
+				recvBytes += recv(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf
+					+ recvBytes, DEFAULT_BUF, 0);
 				if (WSAGetLastError() == WSAEWOULDBLOCK) {
 
-					copy(PerIoData->recvBuffer, PerIoData->recvBuffer + recvBytes, &packet);
+					copy(PerIoData->recvBuffer, PerIoData->recvBuffer + recvBytes,(char*) &packet);
 					//memcpy(&packet, PerIoData->recvBuffer, DEFAULT_BUF);
-					packet.message[recvBytes - 1] = '\0';
+					packet.message[recvBytes] = '\0';
 					cout << packet.message << endl;
 					packet.id = cpm->clients[PerHandleData->id]->id;
 
 					memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 					PerIoData->wsaSendBuf.len = recvBytes;
-					copy(&packet, &packet + recvBytes, PerIoData->sendBuffer);
+					copy(&packet, &packet + recvBytes, (chatPacket* )PerIoData->sendBuffer);
 					//memcpy(PerIoData->sendBuffer, &packet, recvBytes);
 					PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
 

@@ -2,9 +2,12 @@
 #include <algorithm>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#include "../../lib/IOlib.h"
 
 #define PORT 20001
 #define LEN_ID_SIZE 2
+#define NICK_MAX_LEN 32
+#define CLIENT_MAX 5
 
 using namespace std;
 
@@ -24,6 +27,9 @@ chatPacket recvPacket;
 chatPacket sendPacket;
 WSABUF recvBuf;
 WSABUF sendBuf;
+char myNick[32];
+int myId = 0;
+char clientNick[5][32];
 
 void CALLBACK IdAllocRoutine(DWORD error, DWORD cbTramsferred, 
 	LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags);
@@ -49,6 +55,20 @@ int main(void) {
 	sendPacket.id = -1;
 	sendPacket.len = nickLen;
 	copy(myNick, myNick + nickLen, sendPacket.message);
+
+	// 닉네임 보내기
+	int flags = 0;
+	
+	if (sendn(clntSock, (char*)&sendPacket, sendPacket.len + LEN_ID_SIZE, flags)
+		== SOCKET_ERROR)
+		ErrorHandling("NICK send Error!");
+	// 본인 아이디 + 다른 클라이언트 아이디, 닉네임 받기
+	if (recvn(clntSock, (char*)&recvPacket, 2, flags) == SOCKET_ERROR)
+		ErrorHandling("IDLEN recv Error!");
+	myId = recvPacket.id;
+	int recvLen = recvPacket.len;
+	if (recvn(clntSock, clientNick, recvLen, flags) == SOCKET_ERROR)
+		ErrorHandling("client NINC recv Error!");
 
 	//WSAEVENT wsaEvent = WSACreateEvent();
 	//WSAOVERLAPPED overlapped;
