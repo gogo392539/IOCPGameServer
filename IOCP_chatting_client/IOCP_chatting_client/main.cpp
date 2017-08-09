@@ -2,23 +2,36 @@
 #include <algorithm>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
-#include "../../lib/IOlib.h"
+#include <thread>
+
+#include "../../lib/source/IOlib.h"
+
+#pragma comment(lib, "../../lib/debug/IOlib_d.lib")
 
 #define PORT 20001
-#define LEN_ID_SIZE 2
+#define LEN_ID_FLAGS_SIZE 3
 #define NICK_MAX_LEN 32
+#define ID_NOT_ALLOC -1
 #define CLIENT_MAX 5
+#define MESSAGE_FLAG 0
+#define ID_ALLOC_FLAG 1
+#define EVENT_MAX 2
+#define HEADER_RECV_EVENT 0
+#define MESSAGE_RECV_EVENT 1
 
 using namespace std;
 
 void ErrorHandling(char* msg);
 
+void RecvThread(SOCKET clntSock);
+void SendThread(SOCKET clntSock);
 
 //2017.08.07 손기문 맨 처음 id 할당받을때 이 구조체의 id로 받아옴
 #pragma pack(push, 1)   
 struct chatPacket {
 	char len;
 	char id;
+	char flags;
 	char message[256];
 };
 #pragma pack(pop)
@@ -31,8 +44,6 @@ char myNick[32];
 int myId = 0;
 char clientNick[5][32];
 
-void CALLBACK IdAllocRoutine(DWORD error, DWORD cbTramsferred, 
-	LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags);
 
 int main(void) {
 	WSADATA wsaData;
@@ -52,49 +63,32 @@ int main(void) {
 	cout << "닉네임을 입력하세요 : ";
 	cin >> myNick;
 	int nickLen = strlen(myNick);
-	sendPacket.id = -1;
+	sendPacket.id = ID_NOT_ALLOC;
 	sendPacket.len = nickLen;
+	sendPacket.flags = ID_ALLOC_FLAG;
 	copy(myNick, myNick + nickLen, sendPacket.message);
 
 	// 닉네임 보내기
 	int flags = 0;
-	
-	if (sendn(clntSock, (char*)&sendPacket, sendPacket.len + LEN_ID_SIZE, flags)
+	if (sendn(clntSock, (char*)&sendPacket, sendPacket.len + LEN_ID_FLAGS_SIZE, flags)
 		== SOCKET_ERROR)
 		ErrorHandling("NICK send Error!");
-	// 본인 아이디 + 다른 클라이언트 아이디, 닉네임 받기
-	if (recvn(clntSock, (char*)&recvPacket, 2, flags) == SOCKET_ERROR)
+
+	// 본인 아이디 받기
+	if (recvn(clntSock, (char*)&recvPacket, 3, flags) == SOCKET_ERROR)
 		ErrorHandling("IDLEN recv Error!");
-	myId = recvPacket.id;
-	int recvLen = recvPacket.len;
-	if (recvn(clntSock, clientNick, recvLen, flags) == SOCKET_ERROR)
-		ErrorHandling("client NINC recv Error!");
+	if (recvPacket.flags == ID_ALLOC_FLAG) {
+		myId = recvPacket.id;
+		copy(myNick, myNick + nickLen, clientNick[myId]);
+	}
 
-	//WSAEVENT wsaEvent = WSACreateEvent();
-	//WSAOVERLAPPED overlapped;
-	//memset(&overlapped, 0, sizeof(overlapped));
-	//overlapped.hEvent = wsaEvent;
-	//sendBuf.len = nickLen + LEN_ID_SIZE;
-	//sendBuf.buf = (char* )&sendPacket;
+	//_beginthreadex(NULL, 0, WorkerThread, (LPVOID)cpm, 0, NULL);
+	thread recvThread(RecvThread, clntSock);
+	thread sendThread(SendThread, clntSock);
 
-	//int sendBytes = 0;
-	//int flags = 0;
-	//if (WSASend(clntSock, &sendBuf, 1, (DWORD *)&sendBytes,
-	//	(DWORD)&flags, &overlapped, IdAllocRoutine) == SOCKET_ERROR) {
-	//	if (WSAGetLastError() != WSA_IO_PENDING)
-	//		ErrorHandling("nickSend Error");
-	//}
-
-	//int result = WSAWaitForMultipleEvents(1, &wsaEvent, true, WSA_INFINITE, true);
-	////WSAGetOverlappedResult(clntSock, &overlapped, (DWORD* )&sendBytes, true, )
-	//if (result != WAIT_IO_COMPLETION)
-	//	ErrorHandling("nickSendWait Error!");
-
-
-
-
-
-
+	recvThread.join();
+	sendThread.join();
+	WSACleanup();
 	return 0;
 }	
 
@@ -103,8 +97,198 @@ void ErrorHandling(char* msg) {
 	exit(1);
 }
 
-void CALLBACK IdAllocRoutine(DWORD error, DWORD cbTramsferred,
-	LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags) {
+void RecvThread(SOCKET clntSock) {
+	WSAEVENT wsaEvent[EVENT_MAX];
+	int eventNum = HEADER_RECV_EVENT;
+	wsaEvent[HEADER_RECV_EVENT] = WSACreateEvent();
+	wsaEvent[MESSAGE_RECV_EVENT] = WSACreateEvent();
+	WSAOVERLAPPED overlapped;
+	int recvBytes = 0;
+	int headerRecvBytes = 0;
+	int messageRecvBytes = 0;
+	int flags = 0;
+	int index = 0;
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = wsaEvent[eventNum];
+	recvBuf.len = LEN_ID_FLAGS_SIZE;
+	recvBuf.buf = (char*)&recvPacket;
+
+	//헤더 recv
+	if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
+		&overlapped, NULL) == SOCKET_ERROR) {
+		if (WSAGetLastError() != WSA_IO_PENDING)
+			ErrorHandling("RecvThread recv1 Error");
+	}
+
+	while (true) {
+		index = WSAWaitForMultipleEvents(EVENT_MAX, wsaEvent, false, WSA_INFINITE, false);
+		WSAResetEvent(wsaEvent[index - WSA_WAIT_EVENT_0]);
+
+		WSAGetOverlappedResult(clntSock, &overlapped, (DWORD* )&recvBytes, false, (DWORD* )&flags);
+		if (recvBytes == 0) {
+			ErrorHandling("RecvThread RecvHeader1 Error!");
+		}
+		
+		switch (index - WSA_WAIT_EVENT_0) {
+		case HEADER_RECV_EVENT:
+			headerRecvBytes += recvBytes;
+			if (headerRecvBytes == LEN_ID_FLAGS_SIZE) {
+				headerRecvBytes = 0;
+
+				recvBuf.buf = recvPacket.message;
+				recvBuf.len = recvPacket.len;
+				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
+				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
+				
+				//메시지 recv
+				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
+					&overlapped, NULL) == SOCKET_ERROR) {
+					if (WSAGetLastError() != WSA_IO_PENDING)
+						ErrorHandling("RecvThread RecvHeader2 Error");
+				}
+				continue;	// 컨티뉴 안쓸 수 있는지 고민해보기
+			}
+			//헤더 다 못받았을 경우 추가 recv
+			else if (headerRecvBytes < LEN_ID_FLAGS_SIZE) {
+				recvBuf.buf = ((char*)&recvPacket) + recvBytes;
+				recvBuf.len = LEN_ID_FLAGS_SIZE - recvBytes;
+				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
+				overlapped.hEvent = wsaEvent[HEADER_RECV_EVENT];
+
+				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
+					&overlapped, NULL) == SOCKET_ERROR) {
+					if (WSAGetLastError() != WSA_IO_PENDING)
+						ErrorHandling("RecvThread RecvMessage1 Error");
+				}
+				continue;	// 컨티뉴 안쓸 수 있는지 고민해보기
+			}
+			break;
+		case MESSAGE_RECV_EVENT:
+			messageRecvBytes += recvBytes;
+			if (messageRecvBytes == recvPacket.len) {
+				messageRecvBytes = 0;
+
+				switch (recvPacket.flags) {
+				case ID_ALLOC_FLAG:
+					copy(recvPacket.message, recvPacket.message + recvPacket.len,
+						clientNick[recvPacket.id]);
+					break;
+				case MESSAGE_FLAG:
+					cout << clientNick[recvPacket.id] << " : " 
+						<< recvPacket.message << endl;
+					break;
+				}
+
+				recvBuf.buf = (char*)&recvPacket;
+				recvBuf.len = LEN_ID_FLAGS_SIZE;
+				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
+				overlapped.hEvent = wsaEvent[HEADER_RECV_EVENT];
+				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
+					&overlapped, NULL) == SOCKET_ERROR) {
+					if (WSAGetLastError() != WSA_IO_PENDING)
+						ErrorHandling("RecvThread RecvHeader3 Error");
+				}
+			}
+			//메시지 다 못받았을 경우 추가 Recv
+			else if (messageRecvBytes > recvPacket.len) {
+				recvBuf.buf = recvPacket.message + messageRecvBytes;
+				recvBuf.len = recvPacket.len - messageRecvBytes;
+				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
+				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
+
+				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
+					&overlapped, NULL) == SOCKET_ERROR) {
+					if (WSAGetLastError() != WSA_IO_PENDING)
+						ErrorHandling("RecvThread RecvMessage2 Error");
+				}
+			}
+			break;
+		default:
+
+			break;
+		}
 
 
+	}
+	
+}
+
+void SendThread(SOCKET clntSock) {
+	WSAEVENT wsaEvent;
+	wsaEvent = WSACreateEvent();
+	WSAOVERLAPPED overlapped;
+	int sendBytes = 0;
+	int currentSendBytes = 0;
+	int flags = 0;
+	int index = 0;
+	int messageLen = 0;
+
+	cin >> sendPacket.message;
+	messageLen = strlen(sendPacket.message);
+
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = wsaEvent;
+	sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
+	sendBuf.buf = (char*)&sendPacket;
+	sendPacket.len = messageLen;
+	sendPacket.id = myId;
+	sendPacket.flags = MESSAGE_FLAG;
+
+	if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
+		&overlapped, NULL) == SOCKET_ERROR) {
+		if (WSAGetLastError() != WSA_IO_PENDING)
+			ErrorHandling("SendThread send1 Error");
+	}
+
+	while (true) {
+		WSAWaitForMultipleEvents(1, &wsaEvent, false, WSA_INFINITE, false);
+		WSAResetEvent(wsaEvent);
+		WSAGetOverlappedResult(clntSock, &overlapped, 
+			(DWORD*)&sendBytes, false, (DWORD* )&flags);
+		
+		if (sendBytes == 0)
+			ErrorHandling("SendThread send2 Error");
+
+		currentSendBytes += sendBytes;
+		if (sendPacket.len == currentSendBytes) {
+			currentSendBytes = 0;
+			
+			// 본인이 입력한 채팅 메시지 출력
+			cout << myNick << " : " << sendPacket.message;
+			cin >> sendPacket.message;
+			messageLen = strlen(sendPacket.message);
+
+			memset(&overlapped, 0, sizeof(overlapped));
+			overlapped.hEvent = wsaEvent;
+			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
+			sendBuf.buf = (char*)&sendPacket;
+			sendPacket.len = messageLen;
+			//sendPacket.id = myId;
+			sendPacket.flags = MESSAGE_FLAG;
+
+			if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
+				&overlapped, NULL) == SOCKET_ERROR) {
+				if (WSAGetLastError() != WSA_IO_PENDING)
+					ErrorHandling("SendThread send1 Error");
+			}
+		}
+		else if (sendPacket.len > currentSendBytes) {
+			memset(&overlapped, 0, sizeof(overlapped));
+			overlapped.hEvent = wsaEvent;
+			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE - currentSendBytes;
+			sendBuf.buf = (char*)&sendPacket + currentSendBytes;
+			//sendPacket.len = messageLen;
+			//sendPacket.id = myId;
+			sendPacket.flags = MESSAGE_FLAG;
+
+			if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
+				&overlapped, NULL) == SOCKET_ERROR) {
+				if (WSAGetLastError() != WSA_IO_PENDING)
+					ErrorHandling("SendThread send1 Error");
+			}
+		}
+
+		
+
+	}
 }
