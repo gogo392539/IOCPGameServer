@@ -18,7 +18,7 @@
 #define EVENT_MAX 2
 #define HEADER_RECV_EVENT 0
 #define MESSAGE_RECV_EVENT 1
-#define BUF_SIZE
+#define BUF_SIZE 256
 
 using namespace std;
 
@@ -27,7 +27,7 @@ void ErrorHandling(char* msg);
 void RecvThread(SOCKET clntSock);
 void SendThread(SOCKET clntSock);
 
-//2017.08.07 ¼Õ±â¹® ¸Ç Ã³À½ id ÇÒ´ç¹ŞÀ»¶§ ÀÌ ±¸Á¶Ã¼ÀÇ id·Î ¹Ş¾Æ¿È
+//2017.08.07 ì†ê¸°ë¬¸ ë§¨ ì²˜ìŒ id í• ë‹¹ë°›ì„ë•Œ ì´ êµ¬ì¡°ì²´ì˜ idë¡œ ë°›ì•„ì˜´
 #pragma pack(push, 1)   
 struct chatPacket {
 	char len;
@@ -60,7 +60,7 @@ int main(void) {
 	if (connect(clntSock, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
 		ErrorHandling("connect Error!");
 
-	cout << "´Ğ³×ÀÓÀ» ÀÔ·ÂÇÏ¼¼¿ä : ";
+	cout << "ë‹‰ë„¤ì„ì„ ì…ë ¥í•˜ì„¸ìš” : ";
 	cin >> myNick;
 	int nickLen = strlen(myNick);
 	sendPacket.id = ID_NOT_ALLOC;
@@ -68,13 +68,13 @@ int main(void) {
 	sendPacket.flags = ID_ALLOC_FLAG;
 	copy(myNick, myNick + nickLen, sendPacket.message);
 
-	// ´Ğ³×ÀÓ º¸³»±â
+	// ë‹‰ë„¤ì„ ë³´ë‚´ê¸°
 	int flags = 0;
 	if (sendn(clntSock, (char*)&sendPacket, sendPacket.len + LEN_ID_FLAGS_SIZE, flags)
 		== SOCKET_ERROR)
 		ErrorHandling("NICK send Error!");
 
-	// º»ÀÎ ¾ÆÀÌµğ ¹Ş±â
+	// ë³¸ì¸ ì•„ì´ë”” ë°›ê¸°
 	if (recvn(clntSock, (char*)&recvPacket, 3, flags) == SOCKET_ERROR)
 		ErrorHandling("IDLEN recv Error!");
 	if (recvPacket.flags == ID_ALLOC_FLAG) {
@@ -82,7 +82,7 @@ int main(void) {
 		copy(myNick, myNick + nickLen, clientNick[myId]);
 	}
 
-	// recv,  send ½º·¹µå ½ÃÀÛ
+	// recv,  send ìŠ¤ë ˆë“œ ì‹œì‘
 	thread recvThread(RecvThread, clntSock);
 	thread sendThread(SendThread, clntSock);
 
@@ -113,7 +113,7 @@ void RecvThread(SOCKET clntSock) {
 	recvBuf.len = LEN_ID_FLAGS_SIZE;
 	recvBuf.buf = (char*)&recvPacket;
 
-	//Çì´õ recv
+	//í—¤ë” recv
 	if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 		&overlapped, NULL) == SOCKET_ERROR) {
 		if (WSAGetLastError() != WSA_IO_PENDING)
@@ -140,15 +140,15 @@ void RecvThread(SOCKET clntSock) {
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
 				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
 
-				//¸Ş½ÃÁö recv
+				//ë©”ì‹œì§€ recv
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 					&overlapped, NULL) == SOCKET_ERROR) {
 					if (WSAGetLastError() != WSA_IO_PENDING)
 						ErrorHandling("RecvThread RecvHeader2 Error");
 				}
-				continue;	// ÄÁÆ¼´º ¾È¾µ ¼ö ÀÖ´ÂÁö °í¹ÎÇØº¸±â
+				continue;	// ì»¨í‹°ë‰´ ì•ˆì“¸ ìˆ˜ ìˆëŠ”ì§€ ê³ ë¯¼í•´ë³´ê¸°
 			}
-			//Çì´õ ´Ù ¸ø¹Ş¾ÒÀ» °æ¿ì Ãß°¡ recv
+			//í—¤ë” ë‹¤ ëª»ë°›ì•˜ì„ ê²½ìš° ì¶”ê°€ recv
 			else if (headerRecvBytes < LEN_ID_FLAGS_SIZE) {
 				recvBuf.buf = ((char*)&recvPacket) + recvBytes;
 				recvBuf.len = LEN_ID_FLAGS_SIZE - recvBytes;
@@ -160,7 +160,7 @@ void RecvThread(SOCKET clntSock) {
 					if (WSAGetLastError() != WSA_IO_PENDING)
 						ErrorHandling("RecvThread RecvMessage1 Error");
 				}
-				continue;	// ÄÁÆ¼´º ¾È¾µ ¼ö ÀÖ´ÂÁö °í¹ÎÇØº¸±â
+				continue;	// ì»¨í‹°ë‰´ ì•ˆì“¸ ìˆ˜ ìˆëŠ”ì§€ ê³ ë¯¼í•´ë³´ê¸°
 			}
 			break;
 		case MESSAGE_RECV_EVENT:
@@ -189,7 +189,7 @@ void RecvThread(SOCKET clntSock) {
 						ErrorHandling("RecvThread RecvHeader3 Error");
 				}
 			}
-			//¸Ş½ÃÁö ´Ù ¸ø¹Ş¾ÒÀ» °æ¿ì Ãß°¡ Recv
+			//ë©”ì‹œì§€ ë‹¤ ëª»ë°›ì•˜ì„ ê²½ìš° ì¶”ê°€ Recv
 			else if (messageRecvBytes > recvPacket.len) {
 				recvBuf.buf = recvPacket.message + messageRecvBytes;
 				recvBuf.len = recvPacket.len - messageRecvBytes;
@@ -253,7 +253,7 @@ void SendThread(SOCKET clntSock) {
 		if (sendPacket.len == currentSendBytes) {
 			currentSendBytes = 0;
 
-			// º»ÀÎÀÌ ÀÔ·ÂÇÑ Ã¤ÆÃ ¸Ş½ÃÁö Ãâ·Â
+			// ë³¸ì¸ì´ ì…ë ¥í•œ ì±„íŒ… ë©”ì‹œì§€ ì¶œë ¥
 			cout << myNick << " : " << sendPacket.message;
 			cin >> sendPacket.message;
 			messageLen = strlen(sendPacket.message);
