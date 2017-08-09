@@ -24,7 +24,7 @@ struct PER_HANDLE_DATA {
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAddr;
 	int id;
-	string nickname;
+	char nickname[32];
 };
 
 struct PER_IO_DATA {
