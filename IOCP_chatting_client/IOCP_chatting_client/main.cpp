@@ -90,7 +90,7 @@ int main(void) {
 	sendThread.join();
 	WSACleanup();
 	return 0;
-}	
+}
 
 void ErrorHandling(char* msg) {
 	cout << msg << endl;
@@ -124,11 +124,11 @@ void RecvThread(SOCKET clntSock) {
 		index = WSAWaitForMultipleEvents(EVENT_MAX, wsaEvent, false, WSA_INFINITE, false);
 		WSAResetEvent(wsaEvent[index - WSA_WAIT_EVENT_0]);
 
-		WSAGetOverlappedResult(clntSock, &overlapped, (DWORD* )&recvBytes, false, (DWORD* )&flags);
+		WSAGetOverlappedResult(clntSock, &overlapped, (DWORD*)&recvBytes, false, (DWORD*)&flags);
 		if (recvBytes == 0) {
 			ErrorHandling("RecvThread RecvHeader1 Error!");
 		}
-		
+
 		switch (index - WSA_WAIT_EVENT_0) {
 		case HEADER_RECV_EVENT:
 			headerRecvBytes += recvBytes;
@@ -139,7 +139,7 @@ void RecvThread(SOCKET clntSock) {
 				recvBuf.len = recvPacket.len;
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
 				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
-				
+
 				//메시지 recv
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 					&overlapped, NULL) == SOCKET_ERROR) {
@@ -174,7 +174,7 @@ void RecvThread(SOCKET clntSock) {
 						clientNick[recvPacket.id]);
 					break;
 				case MESSAGE_FLAG:
-					cout << clientNick[recvPacket.id] << " : " 
+					cout << clientNick[recvPacket.id] << " : "
 						<< recvPacket.message << endl;
 					break;
 				}
@@ -210,7 +210,7 @@ void RecvThread(SOCKET clntSock) {
 
 
 	}
-	
+
 }
 
 void SendThread(SOCKET clntSock) {
@@ -243,16 +243,16 @@ void SendThread(SOCKET clntSock) {
 	while (true) {
 		WSAWaitForMultipleEvents(1, &wsaEvent, false, WSA_INFINITE, false);
 		WSAResetEvent(wsaEvent);
-		WSAGetOverlappedResult(clntSock, &overlapped, 
-			(DWORD*)&sendBytes, false, (DWORD* )&flags);
-		
+		WSAGetOverlappedResult(clntSock, &overlapped,
+			(DWORD*)&sendBytes, false, (DWORD*)&flags);
+
 		if (sendBytes == 0)
 			ErrorHandling("SendThread send2 Error");
 
 		currentSendBytes += sendBytes;
 		if (sendPacket.len == currentSendBytes) {
 			currentSendBytes = 0;
-			
+
 			// 본인이 입력한 채팅 메시지 출력
 			cout << myNick << " : " << sendPacket.message;
 			cin >> sendPacket.message;
