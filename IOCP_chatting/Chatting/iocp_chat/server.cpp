@@ -5,10 +5,15 @@
 #include <algorithm>
 #include <mutex>
 
-#define DEFAULT_PORT 20001
+#include "../../../lib/source/IOlib.h"
+
+#pragma comment(lib, "../../../lib/debug_lib/IOlib_d.lib")
+
+#define DEFAULT_PORT 20002
 #define DEFAULT_BUF 257
 #define FLAG_BUF 3
 #define CLIENT_MAX 5
+#define NICK_MAX_LEN 32
 
 using std::cout;
 using std::endl;
@@ -19,9 +24,9 @@ enum IOTYPE { RECV, IDALLOC };
 
 #pragma pack(push, 1)   
 struct chatPacket {
-	char flag;
 	char len;
 	char id;
+	char flag;
 	char message[256];
 };
 #pragma pack(pop)
@@ -45,20 +50,25 @@ struct PER_IO_DATA {
 struct CompletionPortMember {
 	HANDLE ComPort;
 	PER_HANDLE_DATA* clients[CLIENT_MAX];
+
+public :
+	CompletionPortMember() {
+		std::fill_n(clients, CLIENT_MAX, nullptr);
+	}
 };			
 
-#pragma pack(push, 1)
-struct clientInfo {
-	int id;
-	char nickname[32];
-};							// client들의 id와 nickname을 저장하는 구조체
-#pragma pack(pop)
+//#pragma pack(push, 1)
+//struct clientInfo {
+//	int id;
+//	char nickname[32];
+//};							// client들의 id와 nickname을 저장하는 구조체
+//#pragma pack(pop)
+//clientInfo clntInfo[CLIENT_MAX];
 
-clientInfo clntInfo[CLIENT_MAX];
+char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
-int recvn(SOCKET socket, char* buf, int len, int flag);
 
 int main(void) {
 	WSAData wsaData;
@@ -67,12 +77,9 @@ int main(void) {
 	SOCKADDR_IN servAddr;
 	PER_HANDLE_DATA * PerHandleData;
 	PER_IO_DATA * PerIoData;
-	CompletionPortMember* cpm = new CompletionPortMember;
+	CompletionPortMember* cpm = new CompletionPortMember();
 
-	for (int i = 0; i < CLIENT_MAX; i++) {
-		clntInfo[i].id = -1;
-		memset(clntInfo[i].nickname, 0, sizeof(clntInfo[i].nickname));
-	}
+	memset(clientNick, 0, sizeof(clientNick));
 
 	int nZero;
 
@@ -110,7 +117,6 @@ int main(void) {
 		SOCKET hClntSock;
 		SOCKADDR_IN clntAddr;
 		int clntAddrSz = sizeof(clntAddr);
-
 
 		hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSz);
 
@@ -169,8 +175,6 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 	int recvBytes;
 	int messageLen, id, flag;
-	char tempNick[32];
-	chatPacket packet;
 
 
 	DWORD RecvBytes = 0;
@@ -179,7 +183,9 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
 			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
-		recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, FLAG_BUF, 0);
+		if (recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, FLAG_BUF, 0) == SOCKET_ERROR) {
+			errorHandler("flag recv error!");
+		}
 		flag = (int)PerIoData->recvPacket.flag;
 		messageLen = (int)PerIoData->recvPacket.len;
 		id = PerHandleData->id;
@@ -187,8 +193,13 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		switch (flag)
 		{
 		case 0:				// client chatting
-			recvBytes = recvn(PerHandleData->hClntSock, 
-				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0);
+			if (recvn(PerHandleData->hClntSock,
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
+				errorHandler("chatting recv error!");
+			}
+
+			PerIoData->recvPacket.message[messageLen] = '\0';
+			cout << PerIoData->recvPacket.message << endl;
 
 			//sendPacket init
 			PerIoData->sendPacket.flag = flag;
@@ -199,18 +210,63 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 			//받은 데이터를 다른 client들에게 재 전송
 			for (int i = 0; i < CLIENT_MAX; i++) {
-				if (i != id && clntInfo[i].id != -1) {
-					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
-						FLAG_BUF + messageLen, 0);
+				if (i != id && cpm->clients[i] != nullptr) {
+					if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket,
+						FLAG_BUF + messageLen, 0) == SOCKET_ERROR) {
+						errorHandler("chatting send error!");
+					}
 				}
 			}
 			
 			break;
 		case 1:				// client enterance
-			recvBytes = recvn(PerHandleData->hClntSock, 
-				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0);
+			if (recvn(PerHandleData->hClntSock,
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
+				errorHandler("client nick recv error!");
+			}
 
-			mutex.lock();
+			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen,
+				clientNick[id]);
+
+			cout << clientNick[id] << endl;
+			
+			PerIoData->sendPacket.flag = flag;
+
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (id == i || cpm->clients[i] == nullptr)
+					continue;
+
+				PerIoData->sendPacket.len = strlen(clientNick[i]);
+				PerIoData->sendPacket.id = i;
+
+				copy(clientNick[i], clientNick[i] + strlen(clientNick[i]),
+					PerIoData->sendPacket.message);
+
+				if (sendn(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket,
+					FLAG_BUF + strlen(clientNick[i]), 0) == SOCKET_ERROR) {
+					errorHandler("client nick send error! 1");
+				}
+			}
+
+			PerIoData->sendPacket.len = strlen(clientNick[id]);
+			PerIoData->sendPacket.id = id;
+			copy(clientNick[id], clientNick[id] + messageLen, 
+				PerIoData->sendPacket.message);
+
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (id == i || cpm->clients[i] == nullptr)
+					continue;
+
+				if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
+					FLAG_BUF + messageLen, 0) == SOCKET_ERROR) {
+					errorHandler("client nick send error! 2");
+				}
+			}
+
+
+
+
+			/*mutex.lock();
 			clntInfo[PerHandleData->id].id = PerHandleData->id;
 			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen, 
 				clntInfo[PerHandleData->id].nickname);
@@ -223,14 +279,14 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			PerIoData->sendPacket.flag = flag;
 			PerIoData->sendPacket.len = 0;
 			PerIoData->sendPacket.id = id;
-			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, FLAG_BUF, 0);
+			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, FLAG_BUF, 0);*/
 
-			for (int i = 0; i < CLIENT_MAX; i++) {
-				if (clntInfo[i].id != -1) {
+			/*for (int i = 0; i < CLIENT_MAX; i++) {
+				if (i != id && cpm->clients[i]->id != -1) {
 					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
 						FLAG_BUF + sizeof(clntInfo), 0);
 				}
-			}
+			}*/
 			break;
 		default:
 			break;
@@ -253,25 +309,4 @@ void errorHandler(char* message) {
 	fputs(message, stderr);
 	fputc('\n', stderr);
 	exit(1);
-}
-
-int recvn(SOCKET socket, char* buf, int len, int flag) {
-	int nleft;
-	int nrecv;
-
-	nleft = len;
-	while (nleft > 0) {
-		nrecv = recv(socket, buf, nleft, flag);
-
-		if (nrecv < 0) {
-			return (SOCKET_ERROR);        /* error */
-		}
-		else if (nrecv == 0) {
-			break;						  /*EOF*/
-		}
-
-		nleft -= nrecv;
-		buf += nrecv;
-	}
-	return (len - nleft);
 }

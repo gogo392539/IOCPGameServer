@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <algorithm>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
@@ -8,7 +8,7 @@
 
 #pragma comment(lib, "../../lib/debug_lib/IOlib_d.lib")
 
-#define PORT 20001
+#define PORT 20002
 #define LEN_ID_FLAGS_SIZE 3
 #define NICK_MAX_LEN 32
 #define ID_NOT_ALLOC -1
@@ -250,11 +250,11 @@ void SendThread(SOCKET clntSock) {
 			ErrorHandling("SendThread send2 Error");
 
 		currentSendBytes += sendBytes;
-		if (sendPacket.len == currentSendBytes) {
+		if (sendBuf.len == currentSendBytes) {
 			currentSendBytes = 0;
 
 			// 본인이 입력한 채팅 메시지 출력
-			cout << myNick << " : " << sendPacket.message;
+			cout << myNick << " : " << sendPacket.message << endl;
 			cin >> sendPacket.message;
 			messageLen = strlen(sendPacket.message);
 
@@ -272,7 +272,7 @@ void SendThread(SOCKET clntSock) {
 					ErrorHandling("SendThread send1 Error");
 			}
 		}
-		else if (sendPacket.len > currentSendBytes) {
+		else if (sendBuf.len > currentSendBytes) {
 			memset(&overlapped, 0, sizeof(overlapped));
 			overlapped.hEvent = wsaEvent;
 			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE - currentSendBytes;
