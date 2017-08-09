@@ -7,13 +7,15 @@
 
 #define DEFAULT_PORT 20001
 #define DEFAULT_BUF 257
-#define FLAG_BUF 2
+#define FLAG_BUF 3
+#define CLIENT_MAX 5
 
-//using std::cout;
-//using std::endl;
-using namespace std;
+using std::cout;
+using std::endl;
+using std::copy;
+//using namespace std;
 
-enum IOTYPE { IDALLOC, RECV, SEND };
+enum IOTYPE { RECV, IDALLOC };
 
 #pragma pack(push, 1)   
 struct chatPacket {
@@ -42,7 +44,7 @@ struct PER_IO_DATA {
 
 struct CompletionPortMember {
 	HANDLE ComPort;
-	PER_HANDLE_DATA* clients[5];
+	PER_HANDLE_DATA* clients[CLIENT_MAX];
 };			
 
 #pragma pack(push, 1)
@@ -52,7 +54,7 @@ struct clientInfo {
 };							// client들의 id와 nickname을 저장하는 구조체
 #pragma pack(pop)
 
-clientInfo clntInfo[5];
+clientInfo clntInfo[CLIENT_MAX];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
@@ -67,7 +69,7 @@ int main(void) {
 	PER_IO_DATA * PerIoData;
 	CompletionPortMember* cpm = new CompletionPortMember;
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < CLIENT_MAX; i++) {
 		clntInfo[i].id = -1;
 		memset(clntInfo[i].nickname, 0, sizeof(clntInfo[i].nickname));
 	}
@@ -118,12 +120,14 @@ int main(void) {
 		직접 제공된 버퍼를 사용한다.
 		*/
 		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (const char*)&nZero, sizeof(int))) {
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, 
+			(const char*)&nZero, sizeof(int))) {
 			errorHandler("setsockopt error");
 		}
 
 		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (const char*)&nZero, sizeof(int))) {
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, 
+			(const char*)&nZero, sizeof(int))) {
 			errorHandler("setsockopt error");
 		}
 		
@@ -134,7 +138,7 @@ int main(void) {
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
 		PerHandleData->id = clientNum;
-		cpm->clients[clientNum++] = PerHandleData;		// client socket, socketaddr, client id, client nickname을 저장
+		cpm->clients[clientNum++] = PerHandleData;
 
 		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
 
@@ -175,42 +179,58 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
 			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
-		recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, 3, 0);
+		recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, FLAG_BUF, 0);
 		flag = (int)PerIoData->recvPacket.flag;
 		messageLen = (int)PerIoData->recvPacket.len;
-		PerIoData->recvPacket.id = PerHandleData->id;
+		id = PerHandleData->id;
 
 		switch (flag)
 		{
 		case 0:				// client chatting
-			
+			recvBytes = recvn(PerHandleData->hClntSock, 
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0);
+
+			//sendPacket init
+			PerIoData->sendPacket.flag = flag;
+			PerIoData->sendPacket.id = id;
+			PerIoData->sendPacket.len = messageLen;
+			copy(PerIoData->sendPacket.message, PerIoData->sendPacket.message + messageLen, 
+				PerIoData->recvPacket.message);
+
+			//받은 데이터를 다른 client들에게 재 전송
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (i != id && clntInfo[i].id != -1) {
+					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
+						FLAG_BUF + messageLen, 0);
+				}
+			}
 			
 			break;
 		case 1:				// client enterance
-			RecvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, messageLen, 0);
+			recvBytes = recvn(PerHandleData->hClntSock, 
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0);
 
 			mutex.lock();
 			clntInfo[PerHandleData->id].id = PerHandleData->id;
-			std::copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen, clntInfo[PerHandleData->id].nickname);
+			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen, 
+				clntInfo[PerHandleData->id].nickname);
 			clntInfo[PerHandleData->id].nickname[messageLen] = '\0';
 			mutex.unlock();
 
-			cout << clntInfo[PerHandleData->id].nickname << " User에게 ID " << clntInfo[PerHandleData->id].id << " 할당" << endl;
-			//cout << clntInfo[PerHandleData->id].nickname  << clntInfo[PerHandleData->id].id  << endl;
-
+			cout << clntInfo[PerHandleData->id].nickname << " User에게 ID " 
+				<< clntInfo[PerHandleData->id].id << " 할당" << endl;
 
 			PerIoData->sendPacket.flag = flag;
 			PerIoData->sendPacket.len = 0;
-			PerIoData->sendPacket.id = PerHandleData->id;
-			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, 3, 0);
+			PerIoData->sendPacket.id = id;
+			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, FLAG_BUF, 0);
 
-			std::copy((char*)&clntInfo, (char*)&clntInfo + sizeof(clntInfo), PerIoData->sendPacket.message);
-
-			/*for (int i = 0; i < 5; i++) {
+			for (int i = 0; i < CLIENT_MAX; i++) {
 				if (clntInfo[i].id != -1) {
-					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 3 + sizeof(clntInfo), 0);
+					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
+						FLAG_BUF + sizeof(clntInfo), 0);
 				}
-			}*/
+			}
 			break;
 		default:
 			break;
@@ -220,7 +240,6 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		memset(&PerIoData->recvPacket, 0, sizeof(PerIoData->recvPacket));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		//PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 

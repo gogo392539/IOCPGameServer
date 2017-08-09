@@ -1,4 +1,4 @@
-#include <iostream>
+ï»¿#include <iostream>
 #include <algorithm>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
@@ -15,7 +15,7 @@ using namespace std;
 void ErrorHandling(char* msg);
 
 
-//2017.08.07 ¼Õ±â¹® ¸Ç Ã³À½ id ÇÒ´ç¹ŞÀ»¶§ ÀÌ ±¸Á¶Ã¼ÀÇ id·Î ¹Ş¾Æ¿È
+//2017.08.07 ì†ê¸°ë¬¸ ë§¨ ì²˜ìŒ id í• ë‹¹ë°›ì„ë•Œ ì´ êµ¬ì¡°ì²´ì˜ idë¡œ ë°›ì•„ì˜´
 #pragma pack(push, 1)   
 struct chatPacket {
 	char flag;
@@ -51,7 +51,7 @@ int main(void) {
 		ErrorHandling("connect Error!");
 
 	char myNick[32];
-	cout << "´Ğ³×ÀÓÀ» ÀÔ·ÂÇÏ¼¼¿ä : ";
+	cout << "ë‹‰ë„¤ì„ì„ ì…ë ¥í•˜ì„¸ìš” : ";
 	cin >> myNick;
 	int nickLen = strlen(myNick);
 	sendPacket.flag = 1;
@@ -59,7 +59,7 @@ int main(void) {
 	sendPacket.len = nickLen;
 	copy(myNick, myNick + nickLen, sendPacket.message);
 
-	// ´Ğ³×ÀÓ º¸³»±â
+	// ë‹‰ë„¤ì„ ë³´ë‚´ê¸°
 	int flags = 0;
 	
 	if (sendn(clntSock, (char*)&sendPacket, sendPacket.len + LEN_ID_SIZE, flags)
@@ -70,7 +70,7 @@ int main(void) {
 	cout << (int)recvPacket.flag << ", " << (int)recvPacket.id << " ," << (int)recvPacket.len << endl;
 
 
-	// º»ÀÎ ¾ÆÀÌµğ + ´Ù¸¥ Å¬¶óÀÌ¾ğÆ® ¾ÆÀÌµğ, ´Ğ³×ÀÓ ¹Ş±â
+	// ë³¸ì¸ ì•„ì´ë”” + ë‹¤ë¥¸ í´ë¼ì´ì–¸íŠ¸ ì•„ì´ë””, ë‹‰ë„¤ì„ ë°›ê¸°
 	/*if (recvn(clntSock, (char*)&recvPacket, 2, flags) == SOCKET_ERROR)
 		ErrorHandling("IDLEN recv Error!");
 	myId = recvPacket.id;
