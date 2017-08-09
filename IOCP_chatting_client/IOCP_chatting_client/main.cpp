@@ -6,7 +6,7 @@
 
 #include "../../lib/source/IOlib.h"
 
-#pragma comment(lib, "../../lib/debug/IOlib_d.lib")
+#pragma comment(lib, "../../lib/debug_lib/IOlib_d.lib")
 
 #define PORT 20001
 #define LEN_ID_FLAGS_SIZE 3
