@@ -9,7 +9,7 @@
 
 #pragma comment(lib, "../../../lib/debug_lib/IOlib_d.lib")
 
-#define DEFAULT_PORT 20002
+#define DEFAULT_PORT 20003
 #define DEFAULT_BUF 257
 #define FLAG_BUF 3
 #define CLIENT_MAX 5
@@ -231,7 +231,15 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			cout << clientNick[id] << endl;
 			
 			PerIoData->sendPacket.flag = flag;
+			PerIoData->sendPacket.id = id;
+			PerIoData->sendPacket.len = 0;
 
+			if (sendn(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket,
+				FLAG_BUF, 0) == SOCKET_ERROR) {
+				errorHandler("IDALLOC send error!");
+			}
+
+			// 저장되어 있는 client nickname을 전송
 			for (int i = 0; i < CLIENT_MAX; i++) {
 				if (id == i || cpm->clients[i] == nullptr)
 					continue;
@@ -248,6 +256,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 				}
 			}
 
+			// 다른 client들에게 지금 접속한 client의 nickname 전송
 			PerIoData->sendPacket.len = strlen(clientNick[id]);
 			PerIoData->sendPacket.id = id;
 			copy(clientNick[id], clientNick[id] + messageLen, 
@@ -262,31 +271,6 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 					errorHandler("client nick send error! 2");
 				}
 			}
-
-
-
-
-			/*mutex.lock();
-			clntInfo[PerHandleData->id].id = PerHandleData->id;
-			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen, 
-				clntInfo[PerHandleData->id].nickname);
-			clntInfo[PerHandleData->id].nickname[messageLen] = '\0';
-			mutex.unlock();
-
-			cout << clntInfo[PerHandleData->id].nickname << " User에게 ID " 
-				<< clntInfo[PerHandleData->id].id << " 할당" << endl;
-
-			PerIoData->sendPacket.flag = flag;
-			PerIoData->sendPacket.len = 0;
-			PerIoData->sendPacket.id = id;
-			send(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket, FLAG_BUF, 0);*/
-
-			/*for (int i = 0; i < CLIENT_MAX; i++) {
-				if (i != id && cpm->clients[i]->id != -1) {
-					send(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
-						FLAG_BUF + sizeof(clntInfo), 0);
-				}
-			}*/
 			break;
 		default:
 			break;

@@ -8,7 +8,7 @@
 
 #pragma comment(lib, "../../lib/debug_lib/IOlib_d.lib")
 
-#define PORT 20002
+#define PORT 20003
 #define LEN_ID_FLAGS_SIZE 3
 #define NICK_MAX_LEN 32
 #define ID_NOT_ALLOC -1
@@ -119,7 +119,6 @@ void RecvThread(SOCKET clntSock) {
 		if (WSAGetLastError() != WSA_IO_PENDING)
 			ErrorHandling("RecvThread recv1 Error");
 	}
-
 	while (true) {
 		index = WSAWaitForMultipleEvents(EVENT_MAX, wsaEvent, false, WSA_INFINITE, false);
 		WSAResetEvent(wsaEvent[index - WSA_WAIT_EVENT_0]);
@@ -135,10 +134,14 @@ void RecvThread(SOCKET clntSock) {
 			if (headerRecvBytes == LEN_ID_FLAGS_SIZE) {
 				headerRecvBytes = 0;
 
+				memset(recvPacket.message, 0, sizeof(recvPacket.message));
 				recvBuf.buf = recvPacket.message;
 				recvBuf.len = recvPacket.len;
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
 				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
+
+				cout << "header recv 1 : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+					<< ", " << (int)recvPacket.len << endl;
 
 				//메시지 recv
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
@@ -165,13 +168,17 @@ void RecvThread(SOCKET clntSock) {
 			break;
 		case MESSAGE_RECV_EVENT:
 			messageRecvBytes += recvBytes;
-			if (messageRecvBytes == recvPacket.len) {
+			if (messageRecvBytes == recvBuf.len) {
 				messageRecvBytes = 0;
 
 				switch (recvPacket.flags) {
 				case ID_ALLOC_FLAG:
 					copy(recvPacket.message, recvPacket.message + recvPacket.len,
 						clientNick[recvPacket.id]);
+
+					cout << "header recv 2 : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+						<< ", " << (int)recvPacket.len << ", " << recvPacket.message << endl;
+
 					break;
 				case MESSAGE_FLAG:
 					cout << clientNick[recvPacket.id] << " : "
