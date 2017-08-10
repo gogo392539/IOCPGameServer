@@ -9,7 +9,7 @@
 
 #pragma comment(lib, "../../../lib/debug_lib/IOlib_d.lib")
 
-#define DEFAULT_PORT 20003
+#define DEFAULT_PORT 20004
 #define DEFAULT_BUF 257
 #define FLAG_BUF 3
 #define CLIENT_MAX 5
@@ -35,7 +35,13 @@ struct PER_HANDLE_DATA {
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAddr;
 	int id;
-	//char nickname[32];
+	char nickname[32];
+	bool initSet;
+
+public :
+	PER_HANDLE_DATA() {
+		initSet = false;
+	}
 };
 
 struct PER_IO_DATA {
@@ -65,7 +71,7 @@ public :
 //#pragma pack(pop)
 //clientInfo clntInfo[CLIENT_MAX];
 
-char clientNick[CLIENT_MAX][NICK_MAX_LEN];
+//char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
@@ -79,7 +85,7 @@ int main(void) {
 	PER_IO_DATA * PerIoData;
 	CompletionPortMember* cpm = new CompletionPortMember();
 
-	memset(clientNick, 0, sizeof(clientNick));
+	//memset(clientNick, 0, sizeof(clientNick));
 
 	int nZero;
 
@@ -140,7 +146,7 @@ int main(void) {
 		u_long mode = 1;
 		ioctlsocket(hClntSock, FIONBIO, &mode);
 		
-		PerHandleData = new PER_HANDLE_DATA;
+		PerHandleData = new PER_HANDLE_DATA();
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
 		PerHandleData->id = clientNum;
@@ -175,6 +181,9 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 	int recvBytes;
 	int messageLen, id, flag;
+
+	char *tempNick = nullptr;
+	char *OtherClntNick = nullptr;
 
 
 	DWORD RecvBytes = 0;
@@ -226,9 +235,13 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			}
 
 			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen,
-				clientNick[id]);
+				PerHandleData->nickname);
 
-			cout << clientNick[id] << endl;
+			tempNick = PerHandleData->nickname;
+
+			cout << tempNick << endl;
+
+
 			
 			PerIoData->sendPacket.flag = flag;
 			PerIoData->sendPacket.id = id;
@@ -239,31 +252,36 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 				errorHandler("IDALLOC send error!");
 			}
 
+			PerHandleData->initSet = true;
+
 			// 저장되어 있는 client nickname을 전송
 			for (int i = 0; i < CLIENT_MAX; i++) {
-				if (id == i || cpm->clients[i] == nullptr)
+				if (id == i || cpm->clients[i] == nullptr || !(cpm->clients[i]->initSet))
 					continue;
 
-				PerIoData->sendPacket.len = strlen(clientNick[i]);
+				OtherClntNick = cpm->clients[i]->nickname;
+				int OCNLen = strlen(OtherClntNick);
+
+				PerIoData->sendPacket.len = OCNLen;
 				PerIoData->sendPacket.id = i;
 
-				copy(clientNick[i], clientNick[i] + strlen(clientNick[i]),
+				copy(OtherClntNick, OtherClntNick + OCNLen,
 					PerIoData->sendPacket.message);
 
 				if (sendn(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket,
-					FLAG_BUF + strlen(clientNick[i]), 0) == SOCKET_ERROR) {
+					FLAG_BUF + OCNLen, 0) == SOCKET_ERROR) {
 					errorHandler("client nick send error! 1");
 				}
 			}
 
 			// 다른 client들에게 지금 접속한 client의 nickname 전송
-			PerIoData->sendPacket.len = strlen(clientNick[id]);
+			PerIoData->sendPacket.len = strlen(tempNick);
 			PerIoData->sendPacket.id = id;
-			copy(clientNick[id], clientNick[id] + messageLen, 
+			copy(tempNick, tempNick + messageLen,
 				PerIoData->sendPacket.message);
 
 			for (int i = 0; i < CLIENT_MAX; i++) {
-				if (id == i || cpm->clients[i] == nullptr)
+				if (id == i || cpm->clients[i] == nullptr || !(cpm->clients[i]->initSet))
 					continue;
 
 				if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
@@ -271,6 +289,10 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 					errorHandler("client nick send error! 2");
 				}
 			}
+
+			tempNick = nullptr;
+			OtherClntNick = nullptr;
+
 			break;
 		default:
 			break;

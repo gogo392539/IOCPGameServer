@@ -8,7 +8,7 @@
 
 #pragma comment(lib, "../../lib/debug_lib/IOlib_d.lib")
 
-#define PORT 20003
+#define PORT 20004
 #define LEN_ID_FLAGS_SIZE 3
 #define NICK_MAX_LEN 32
 #define ID_NOT_ALLOC -1
@@ -168,7 +168,7 @@ void RecvThread(SOCKET clntSock) {
 			break;
 		case MESSAGE_RECV_EVENT:
 			messageRecvBytes += recvBytes;
-			if (messageRecvBytes == recvBuf.len) {
+			if (messageRecvBytes == recvPacket.len) {
 				messageRecvBytes = 0;
 
 				switch (recvPacket.flags) {
