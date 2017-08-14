@@ -1,21 +1,34 @@
-#include <iostream>
+﻿#include <iostream>
 #include <process.h>
 #include <string>
 #include <WinSock2.h>
 #include <algorithm>
+#include <mutex>
 
-#define DEFAULT_PORT 20001
+#include "../../../lib/source/IOlib.h"
+
+#pragma comment(lib, "../../../lib/debug_lib/IOlib_d.lib")
+
+#define DEFAULT_PORT 20004
 #define DEFAULT_BUF 257
-#define FLAG_BUF 2
+#define FLAG_BUF 3
+#define CLIENT_MAX 5
+#define NICK_MAX_LEN 32
+#define FLAGCHATTING 0
+#define FLAGIDALLOC 1
 
-using namespace std;
+using std::cout;
+using std::endl;
+using std::copy;
+//using namespace std;
 
-enum IOTYPE { IDALLOC, RECV, SEND };
+enum IOTYPE { RECV, IDALLOC };
 
 #pragma pack(push, 1)   
 struct chatPacket {
 	char len;
 	char id;
+	char flag;
 	char message[256];
 };
 #pragma pack(pop)
@@ -25,6 +38,10 @@ struct PER_HANDLE_DATA {
 	SOCKADDR_IN clntAddr;
 	int id;
 	char nickname[32];
+<<<<<<< HEAD
+=======
+	bool initSet;
+>>>>>>> origin/seo
 };
 
 struct PER_IO_DATA {
@@ -38,12 +55,26 @@ struct PER_IO_DATA {
 
 struct CompletionPortMember {
 	HANDLE ComPort;
-	PER_HANDLE_DATA* clients[5];
-};
+	PER_HANDLE_DATA* clients[CLIENT_MAX];
+
+public :
+	CompletionPortMember() {
+		std::fill_n(clients, CLIENT_MAX, nullptr);
+	}
+};			
+
+//#pragma pack(push, 1)
+//struct clientInfo {
+//	int id;
+//	char nickname[32];
+//};							// client들의 id와 nickname을 저장하는 구조체
+//#pragma pack(pop)
+//clientInfo clntInfo[CLIENT_MAX];
+
+//char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
-int recvn(SOCKET socket, char* buf, int len, int flag);
 
 int main(void) {
 	WSAData wsaData;
@@ -52,7 +83,9 @@ int main(void) {
 	SOCKADDR_IN servAddr;
 	PER_HANDLE_DATA * PerHandleData;
 	PER_IO_DATA * PerIoData;
-	CompletionPortMember* cpm = new CompletionPortMember;
+	CompletionPortMember* cpm = new CompletionPortMember();
+
+	//memset(clientNick, 0, sizeof(clientNick));
 
 	int nZero;
 
@@ -91,7 +124,6 @@ int main(void) {
 		SOCKADDR_IN clntAddr;
 		int clntAddrSz = sizeof(clntAddr);
 
-
 		hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSz);
 
 		/* 
@@ -100,23 +132,26 @@ int main(void) {
 		직접 제공된 버퍼를 사용한다.
 		*/
 		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (const char*)&nZero, sizeof(int))) {
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, 
+			(const char*)&nZero, sizeof(int))) {
 			errorHandler("setsockopt error");
 		}
 
 		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (const char*)&nZero, sizeof(int))) {
+		if (SOCKET_ERROR == setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, 
+			(const char*)&nZero, sizeof(int))) {
 			errorHandler("setsockopt error");
 		}
 		
 		u_long mode = 1;
 		ioctlsocket(hClntSock, FIONBIO, &mode);
 		
-		PerHandleData = new PER_HANDLE_DATA;
+		PerHandleData = new PER_HANDLE_DATA();
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
 		PerHandleData->id = clientNum;
-		cpm->clients[clientNum++] = PerHandleData;		// client socket, socketaddr, client id, client nickname을 저장
+		PerHandleData->initSet = false;
+		cpm->clients[clientNum++] = PerHandleData;
 
 		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
 
@@ -124,7 +159,7 @@ int main(void) {
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		PerIoData->operationType = IOTYPE::IDALLOC;
+		//PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
@@ -137,6 +172,7 @@ int main(void) {
 }
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
+	std::mutex mutex;
 	CompletionPortMember* cpm = (CompletionPortMember*)CompPortMem;
 	HANDLE CompletionPort = (HANDLE)cpm->ComPort;
 	DWORD BytesTransferred;
@@ -145,9 +181,10 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 	PER_IO_DATA* PerIoData;
 
 	int recvBytes;
-	int messageLen, id;
-	string tempNick;
-	chatPacket packet;
+	int messageLen, id, flag;
+
+	char *tempNick = nullptr;
+	char *OtherClntNick = nullptr;
 
 
 	DWORD RecvBytes = 0;
@@ -156,10 +193,16 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		GetQueuedCompletionStatus(CompletionPort, &BytesTransferred, 
 			(LPDWORD)&PerHandleData, (LPOVERLAPPED*)&PerIoData, INFINITE);
 		
-		
+		if (recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, FLAG_BUF, 0) == SOCKET_ERROR) {
+			errorHandler("flag recv error!");
+		}
+		flag = (int)PerIoData->recvPacket.flag;
+		messageLen = (int)PerIoData->recvPacket.len;
+		id = PerHandleData->id;
 
-		switch (PerIoData->operationType)
+		switch (flag)
 		{
+<<<<<<< HEAD
 		case IOTYPE::IDALLOC:
 <<<<<<< HEAD
 			while (true) {
@@ -186,44 +229,104 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 				}
 			}
 =======
+=======
+		case FLAGCHATTING:				// client chatting
+			if (recvn(PerHandleData->hClntSock,
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
+				errorHandler("chatting recv error!");
+			}
+
+			PerIoData->recvPacket.message[messageLen] = '\0';
+			cout << PerHandleData->nickname << " : " << PerIoData->recvPacket.message << endl;
+
+			//sendPacket init
+			PerIoData->sendPacket.flag = FLAGCHATTING;
+			PerIoData->sendPacket.id = id;
+			PerIoData->sendPacket.len = messageLen;
+			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen,
+				PerIoData->sendPacket.message);
+
+			//받은 데이터를 다른 client들에게 재 전송
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (i != id && cpm->clients[i] != nullptr) {
+					if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket,
+						FLAG_BUF + messageLen, 0) == SOCKET_ERROR) {
+						errorHandler("chatting send error!");
+					}
+				}
+			}
+>>>>>>> origin/seo
 			
-			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf, 2, 0);
-			messageLen = (int)PerIoData->recvPacket.len;		//message의 길이 저장
+			break;
+		case FLAGIDALLOC:				// client enterance
+			if (recvn(PerHandleData->hClntSock,
+				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
+				errorHandler("client nick recv error!");
+			}
 
-			recvBytes = recvn(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf + recvBytes, messageLen, 0);
+			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen,
+				PerHandleData->nickname);
+
+			tempNick = PerHandleData->nickname;
+
+			cout << tempNick << endl;
 			
+			PerIoData->sendPacket.flag = FLAGIDALLOC;
+			PerIoData->sendPacket.id = id;
+			PerIoData->sendPacket.len = 0;
 
-			PerIoData->recvPacket.message[messageLen] = '\0';	//message의 마지막에 null 문자 삽입
-			tempNick = PerIoData->recvPacket.message;
-			cpm->clients[PerHandleData->id]->nickname = tempNick;
-			PerIoData->recvPacket.id = cpm->clients[PerHandleData->id]->id;
+			if (sendn(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket,
+				FLAG_BUF, 0) == SOCKET_ERROR) {
+				errorHandler("IDALLOC send error!");
+			}
 
-			cout << PerIoData->recvPacket.message << ", " << cpm->clients[PerHandleData->id]->nickname << endl;
+			PerHandleData->initSet = true;
 
+			// 저장되어 있는 client nickname을 전송
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (id == i || cpm->clients[i] == nullptr || !(cpm->clients[i]->initSet))
+					continue;
 
+				OtherClntNick = cpm->clients[i]->nickname;
+				int OCNLen = strlen(OtherClntNick);
 
+				PerIoData->sendPacket.len = OCNLen;
+				PerIoData->sendPacket.id = i;
 
-				//recvBytes += 1;				// 마지막 recv에서 SOCKET_ERROR (-1)을 반환하기 때문에 +1을 해준다.
-				//PerIoData->recvPacket.message[2] = '\0';
-				//cout << PerIoData->recvPacket.message << endl;
+				copy(OtherClntNick, OtherClntNick + OCNLen,
+					PerIoData->sendPacket.message);
 
-				//memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
-				//PerIoData->wsaSendBuf.len = recvBytes;
-				//copy(&packet, &packet + recvBytes, (chatPacket*)PerIoData->sendBuffer);
-				//memcpy(PerIoData->sendBuffer, (char*)&packet, recvBytes);
-				//PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
+				if (sendn(PerHandleData->hClntSock, (char*)&PerIoData->sendPacket,
+					FLAG_BUF + OCNLen, 0) == SOCKET_ERROR) {
+					errorHandler("client nick send error! 1");
+				}
+			}
 
-				//WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
+			// 다른 client들에게 지금 접속한 client의 nickname 전송
+			PerIoData->sendPacket.len = strlen(tempNick);
+			PerIoData->sendPacket.id = id;
+			copy(tempNick, tempNick + messageLen,
+				PerIoData->sendPacket.message);
 
-
-
+<<<<<<< HEAD
 			
 >>>>>>> 6f72159c69ba34da98ccd85e75a325f5a6785c3b
 			break;
 		case IOTYPE::RECV:
+=======
+			for (int i = 0; i < CLIENT_MAX; i++) {
+				if (id == i || cpm->clients[i] == nullptr || !(cpm->clients[i]->initSet))
+					continue;
+>>>>>>> origin/seo
 
-			break;
-		case IOTYPE::SEND:
+				if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
+					FLAG_BUF + messageLen, 0) == SOCKET_ERROR) {
+					errorHandler("client nick send error! 2");
+				}
+			}
+
+			tempNick = nullptr;
+			OtherClntNick = nullptr;
 
 			break;
 		default:
@@ -231,16 +334,14 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		}
 
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+		memset(&PerIoData->recvPacket, 0, sizeof(PerIoData->recvPacket));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
 		WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
 			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
-		
-
 	}
 
 }
@@ -249,25 +350,4 @@ void errorHandler(char* message) {
 	fputs(message, stderr);
 	fputc('\n', stderr);
 	exit(1);
-}
-
-int recvn(SOCKET socket, char* buf, int len, int flag) {
-	int nleft;
-	int nrecv;
-
-	nleft = len;
-	while (nleft > 0) {
-		nrecv = recv(socket, buf, nleft, flag);
-
-		if (nrecv < 0) {
-			return (SOCKET_ERROR);        /* error */
-		}
-		else if (nrecv == 0) {
-			break;						  /*EOF*/
-		}
-
-		nleft -= nrecv;
-		buf += nrecv;
-	}
-	return (len - nleft);
 }

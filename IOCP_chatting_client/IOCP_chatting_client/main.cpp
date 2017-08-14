@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 #include <iostream>
+=======
+﻿#include <iostream>
+>>>>>>> origin/seo
 #include <algorithm>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
@@ -8,7 +12,11 @@
 
 #pragma comment(lib, "../../lib/debug_lib/IOlib_d.lib")
 
+<<<<<<< HEAD
 #define PORT 20001
+=======
+#define PORT 20004
+>>>>>>> origin/seo
 #define LEN_ID_FLAGS_SIZE 3
 #define NICK_MAX_LEN 32
 #define ID_NOT_ALLOC -1
@@ -37,7 +45,11 @@ struct chatPacket {
 };
 #pragma pack(pop)
 
+<<<<<<< HEAD
 chatPacket recvPacket;
+=======
+//chatPacket recvPacket;
+>>>>>>> origin/seo
 chatPacket sendPacket;
 WSABUF recvBuf;
 WSABUF sendBuf;
@@ -48,6 +60,12 @@ char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 int main(void) {
 	WSADATA wsaData;
+<<<<<<< HEAD
+=======
+
+	chatPacket recvPacket;
+
+>>>>>>> origin/seo
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 		ErrorHandling("WSAStartup Error!");
 
@@ -103,6 +121,10 @@ void RecvThread(SOCKET clntSock) {
 	wsaEvent[HEADER_RECV_EVENT] = WSACreateEvent();
 	wsaEvent[MESSAGE_RECV_EVENT] = WSACreateEvent();
 	WSAOVERLAPPED overlapped;
+<<<<<<< HEAD
+=======
+	chatPacket recvPacket;
+>>>>>>> origin/seo
 	int recvBytes = 0;
 	int headerRecvBytes = 0;
 	int messageRecvBytes = 0;
@@ -119,7 +141,10 @@ void RecvThread(SOCKET clntSock) {
 		if (WSAGetLastError() != WSA_IO_PENDING)
 			ErrorHandling("RecvThread recv1 Error");
 	}
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/seo
 	while (true) {
 		index = WSAWaitForMultipleEvents(EVENT_MAX, wsaEvent, false, WSA_INFINITE, false);
 		WSAResetEvent(wsaEvent[index - WSA_WAIT_EVENT_0]);
@@ -135,11 +160,21 @@ void RecvThread(SOCKET clntSock) {
 			if (headerRecvBytes == LEN_ID_FLAGS_SIZE) {
 				headerRecvBytes = 0;
 
+<<<<<<< HEAD
+=======
+				memset(recvPacket.message, 0, sizeof(recvPacket.message));
+>>>>>>> origin/seo
 				recvBuf.buf = recvPacket.message;
 				recvBuf.len = recvPacket.len;
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
 				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
 
+<<<<<<< HEAD
+=======
+				cout << "header recv : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+					<< ", " << (int)recvPacket.len << endl;
+
+>>>>>>> origin/seo
 				//메시지 recv
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 					&overlapped, NULL) == SOCKET_ERROR) {
@@ -172,6 +207,13 @@ void RecvThread(SOCKET clntSock) {
 				case ID_ALLOC_FLAG:
 					copy(recvPacket.message, recvPacket.message + recvPacket.len,
 						clientNick[recvPacket.id]);
+<<<<<<< HEAD
+=======
+
+					/*cout << "idallc recv : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+						<< ", " << (int)recvPacket.len << ", " << recvPacket.message << endl;*/
+
+>>>>>>> origin/seo
 					break;
 				case MESSAGE_FLAG:
 					cout << clientNick[recvPacket.id] << " : "
@@ -179,6 +221,10 @@ void RecvThread(SOCKET clntSock) {
 					break;
 				}
 
+<<<<<<< HEAD
+=======
+				memset(recvPacket.message, 0, sizeof(recvPacket.message));
+>>>>>>> origin/seo
 				recvBuf.buf = (char*)&recvPacket;
 				recvBuf.len = LEN_ID_FLAGS_SIZE;
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
@@ -250,6 +296,7 @@ void SendThread(SOCKET clntSock) {
 			ErrorHandling("SendThread send2 Error");
 
 		currentSendBytes += sendBytes;
+<<<<<<< HEAD
 		if (sendPacket.len == currentSendBytes) {
 			currentSendBytes = 0;
 
@@ -265,6 +312,24 @@ void SendThread(SOCKET clntSock) {
 			sendPacket.len = messageLen;
 			//sendPacket.id = myId;
 			sendPacket.flags = MESSAGE_FLAG;
+=======
+		if (sendBuf.len == currentSendBytes) {
+			currentSendBytes = 0;
+
+			// 본인이 입력한 채팅 메시지 출력
+			cout << "Me" << " : " << sendPacket.message << endl;
+			cin >> sendPacket.message;
+			messageLen = strlen(sendPacket.message);
+
+			sendPacket.len = messageLen;
+			sendPacket.id = myId;
+			sendPacket.flags = MESSAGE_FLAG;
+
+			memset(&overlapped, 0, sizeof(overlapped));
+			overlapped.hEvent = wsaEvent;
+			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
+			sendBuf.buf = (char*)&sendPacket;			
+>>>>>>> origin/seo
 
 			if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
 				&overlapped, NULL) == SOCKET_ERROR) {
@@ -272,7 +337,11 @@ void SendThread(SOCKET clntSock) {
 					ErrorHandling("SendThread send1 Error");
 			}
 		}
+<<<<<<< HEAD
 		else if (sendPacket.len > currentSendBytes) {
+=======
+		else if (sendBuf.len > currentSendBytes) {
+>>>>>>> origin/seo
 			memset(&overlapped, 0, sizeof(overlapped));
 			overlapped.hEvent = wsaEvent;
 			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE - currentSendBytes;
