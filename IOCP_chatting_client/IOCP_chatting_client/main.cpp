@@ -37,7 +37,7 @@ struct chatPacket {
 };
 #pragma pack(pop)
 
-chatPacket recvPacket;
+//chatPacket recvPacket;
 chatPacket sendPacket;
 WSABUF recvBuf;
 WSABUF sendBuf;
@@ -48,6 +48,9 @@ char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 int main(void) {
 	WSADATA wsaData;
+
+	chatPacket recvPacket;
+
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 		ErrorHandling("WSAStartup Error!");
 
@@ -103,6 +106,7 @@ void RecvThread(SOCKET clntSock) {
 	wsaEvent[HEADER_RECV_EVENT] = WSACreateEvent();
 	wsaEvent[MESSAGE_RECV_EVENT] = WSACreateEvent();
 	WSAOVERLAPPED overlapped;
+	chatPacket recvPacket;
 	int recvBytes = 0;
 	int headerRecvBytes = 0;
 	int messageRecvBytes = 0;
@@ -140,7 +144,7 @@ void RecvThread(SOCKET clntSock) {
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
 				overlapped.hEvent = wsaEvent[MESSAGE_RECV_EVENT];
 
-				cout << "header recv 1 : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+				cout << "header recv : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
 					<< ", " << (int)recvPacket.len << endl;
 
 				//메시지 recv
@@ -176,8 +180,8 @@ void RecvThread(SOCKET clntSock) {
 					copy(recvPacket.message, recvPacket.message + recvPacket.len,
 						clientNick[recvPacket.id]);
 
-					cout << "header recv 2 : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
-						<< ", " << (int)recvPacket.len << ", " << recvPacket.message << endl;
+					/*cout << "idallc recv : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
+						<< ", " << (int)recvPacket.len << ", " << recvPacket.message << endl;*/
 
 					break;
 				case MESSAGE_FLAG:
@@ -186,6 +190,7 @@ void RecvThread(SOCKET clntSock) {
 					break;
 				}
 
+				memset(recvPacket.message, 0, sizeof(recvPacket.message));
 				recvBuf.buf = (char*)&recvPacket;
 				recvBuf.len = LEN_ID_FLAGS_SIZE;
 				memset(&overlapped, 0, sizeof(WSAOVERLAPPED));
@@ -261,17 +266,18 @@ void SendThread(SOCKET clntSock) {
 			currentSendBytes = 0;
 
 			// 본인이 입력한 채팅 메시지 출력
-			cout << myNick << " : " << sendPacket.message << endl;
+			cout << "Me" << " : " << sendPacket.message << endl;
 			cin >> sendPacket.message;
 			messageLen = strlen(sendPacket.message);
+
+			sendPacket.len = messageLen;
+			sendPacket.id = myId;
+			sendPacket.flags = MESSAGE_FLAG;
 
 			memset(&overlapped, 0, sizeof(overlapped));
 			overlapped.hEvent = wsaEvent;
 			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
-			sendBuf.buf = (char*)&sendPacket;
-			sendPacket.len = messageLen;
-			//sendPacket.id = myId;
-			sendPacket.flags = MESSAGE_FLAG;
+			sendBuf.buf = (char*)&sendPacket;			
 
 			if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
 				&overlapped, NULL) == SOCKET_ERROR) {

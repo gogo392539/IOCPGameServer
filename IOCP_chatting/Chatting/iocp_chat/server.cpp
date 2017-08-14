@@ -14,6 +14,8 @@
 #define FLAG_BUF 3
 #define CLIENT_MAX 5
 #define NICK_MAX_LEN 32
+#define FLAGCHATTING 0
+#define FLAGIDALLOC 1
 
 using std::cout;
 using std::endl;
@@ -37,11 +39,6 @@ struct PER_HANDLE_DATA {
 	int id;
 	char nickname[32];
 	bool initSet;
-
-public :
-	PER_HANDLE_DATA() {
-		initSet = false;
-	}
 };
 
 struct PER_IO_DATA {
@@ -150,6 +147,7 @@ int main(void) {
 		PerHandleData->hClntSock = hClntSock;
 		memcpy(&PerHandleData->clntAddr, &clntAddr, clntAddrSz);
 		PerHandleData->id = clientNum;
+		PerHandleData->initSet = false;
 		cpm->clients[clientNum++] = PerHandleData;
 
 		CreateIoCompletionPort((HANDLE)hClntSock, cpm->ComPort, (DWORD)PerHandleData, 0);
@@ -201,21 +199,21 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 		switch (flag)
 		{
-		case 0:				// client chatting
+		case FLAGCHATTING:				// client chatting
 			if (recvn(PerHandleData->hClntSock,
 				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
 				errorHandler("chatting recv error!");
 			}
 
 			PerIoData->recvPacket.message[messageLen] = '\0';
-			cout << PerIoData->recvPacket.message << endl;
+			cout << PerHandleData->nickname << " : " << PerIoData->recvPacket.message << endl;
 
 			//sendPacket init
-			PerIoData->sendPacket.flag = flag;
+			PerIoData->sendPacket.flag = FLAGCHATTING;
 			PerIoData->sendPacket.id = id;
 			PerIoData->sendPacket.len = messageLen;
-			copy(PerIoData->sendPacket.message, PerIoData->sendPacket.message + messageLen, 
-				PerIoData->recvPacket.message);
+			copy(PerIoData->recvPacket.message, PerIoData->recvPacket.message + messageLen,
+				PerIoData->sendPacket.message);
 
 			//받은 데이터를 다른 client들에게 재 전송
 			for (int i = 0; i < CLIENT_MAX; i++) {
@@ -228,7 +226,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			}
 			
 			break;
-		case 1:				// client enterance
+		case FLAGIDALLOC:				// client enterance
 			if (recvn(PerHandleData->hClntSock,
 				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
 				errorHandler("client nick recv error!");
@@ -240,10 +238,8 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			tempNick = PerHandleData->nickname;
 
 			cout << tempNick << endl;
-
-
 			
-			PerIoData->sendPacket.flag = flag;
+			PerIoData->sendPacket.flag = FLAGIDALLOC;
 			PerIoData->sendPacket.id = id;
 			PerIoData->sendPacket.len = 0;
 
