@@ -38,10 +38,7 @@ struct PER_HANDLE_DATA {
 	SOCKADDR_IN clntAddr;
 	int id;
 	char nickname[32];
-<<<<<<< HEAD
-=======
 	bool initSet;
->>>>>>> origin/seo
 };
 
 struct PER_IO_DATA {
@@ -202,34 +199,6 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 
 		switch (flag)
 		{
-<<<<<<< HEAD
-		case IOTYPE::IDALLOC:
-<<<<<<< HEAD
-			while (true) {
-				recvBytes += recv(PerHandleData->hClntSock, PerIoData->wsaRecvBuf.buf
-					+ recvBytes, DEFAULT_BUF, 0);
-				if (WSAGetLastError() == WSAEWOULDBLOCK) {
-
-					copy(PerIoData->recvBuffer, PerIoData->recvBuffer + recvBytes,(char*) &packet);
-					//memcpy(&packet, PerIoData->recvBuffer, DEFAULT_BUF);
-					packet.message[recvBytes] = '\0';
-					cout << packet.message << endl;
-					packet.id = cpm->clients[PerHandleData->id]->id;
-
-					memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
-					PerIoData->wsaSendBuf.len = recvBytes;
-					copy(&packet, &packet + recvBytes, (chatPacket* )PerIoData->sendBuffer);
-					//memcpy(PerIoData->sendBuffer, &packet, recvBytes);
-					PerIoData->wsaSendBuf.buf = PerIoData->sendBuffer;
-
-					WSASend(PerHandleData->hClntSock, &(PerIoData->wsaSendBuf), 1, NULL, 0, &PerIoData->overlapped, NULL);
-					
-
-					break;
-				}
-			}
-=======
-=======
 		case FLAGCHATTING:				// client chatting
 			if (recvn(PerHandleData->hClntSock,
 				PerIoData->wsaRecvBuf.buf + FLAG_BUF, messageLen, 0) == SOCKET_ERROR) {
@@ -254,9 +223,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 						errorHandler("chatting send error!");
 					}
 				}
-			}
->>>>>>> origin/seo
-			
+			}			
 			break;
 		case FLAGIDALLOC:				// client enterance
 			if (recvn(PerHandleData->hClntSock,
@@ -308,16 +275,9 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			copy(tempNick, tempNick + messageLen,
 				PerIoData->sendPacket.message);
 
-<<<<<<< HEAD
-			
->>>>>>> 6f72159c69ba34da98ccd85e75a325f5a6785c3b
-			break;
-		case IOTYPE::RECV:
-=======
 			for (int i = 0; i < CLIENT_MAX; i++) {
 				if (id == i || cpm->clients[i] == nullptr || !(cpm->clients[i]->initSet))
 					continue;
->>>>>>> origin/seo
 
 				if (sendn(cpm->clients[i]->hClntSock, (char*)&PerIoData->sendPacket, 
 					FLAG_BUF + messageLen, 0) == SOCKET_ERROR) {
