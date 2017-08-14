@@ -223,7 +223,8 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 						errorHandler("chatting send error!");
 					}
 				}
-			}			
+			}
+			
 			break;
 		case FLAGIDALLOC:				// client enterance
 			if (recvn(PerHandleData->hClntSock,
