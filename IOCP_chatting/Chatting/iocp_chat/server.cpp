@@ -16,13 +16,12 @@
 #define NICK_MAX_LEN 32
 #define FLAGCHATTING 0
 #define FLAGIDALLOC 1
+#define FLAGDISCONNECT 2
 
 using std::cout;
 using std::endl;
 using std::copy;
 //using namespace std;
-
-enum IOTYPE { RECV, IDALLOC };
 
 #pragma pack(push, 1)   
 struct chatPacket {
@@ -47,7 +46,6 @@ struct PER_IO_DATA {
 	chatPacket sendPacket;
 	WSABUF wsaRecvBuf;
 	WSABUF wsaSendBuf;
-	IOTYPE operationType;
 };
 
 struct CompletionPortMember {
@@ -59,16 +57,6 @@ public :
 		std::fill_n(clients, CLIENT_MAX, nullptr);
 	}
 };			
-
-//#pragma pack(push, 1)
-//struct clientInfo {
-//	int id;
-//	char nickname[32];
-//};							// client들의 id와 nickname을 저장하는 구조체
-//#pragma pack(pop)
-//clientInfo clntInfo[CLIENT_MAX];
-
-//char clientNick[CLIENT_MAX][NICK_MAX_LEN];
 
 unsigned int __stdcall CompletionThread(HANDLE CompPortMem);
 void errorHandler(char* message);
@@ -156,7 +144,6 @@ int main(void) {
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
 		PerIoData->wsaRecvBuf.len = 0;
 		PerIoData->wsaRecvBuf.buf = (char*)&(PerIoData->recvPacket);
-		//PerIoData->operationType = IOTYPE::IDALLOC;
 
 		Flags = 0;
 
@@ -290,8 +277,14 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 			OtherClntNick = nullptr;
 
 			break;
-		default:
-			break;
+		case FLAGDISCONNECT:		// client disconnect
+			cout << "client : " << PerHandleData->nickname << " Disconnect" << endl;
+			closesocket(PerHandleData->hClntSock);
+			cpm->clients[PerHandleData->id] = NULL;
+			delete PerHandleData;
+			delete PerIoData;
+
+			continue;
 		}
 
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
@@ -304,7 +297,7 @@ unsigned int __stdcall CompletionThread(HANDLE CompPortMem) {
 		WSARecv(PerHandleData->hClntSock, &PerIoData->wsaRecvBuf, 1,
 			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
 	}
-
+	delete cpm;
 }
 
 void errorHandler(char* message) {

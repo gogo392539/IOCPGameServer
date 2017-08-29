@@ -3,6 +3,7 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <thread>
+#include <string>
 
 #include "../../lib/source/IOlib.h"
 
@@ -129,7 +130,10 @@ void RecvThread(SOCKET clntSock) {
 
 		WSAGetOverlappedResult(clntSock, &overlapped, (DWORD*)&recvBytes, false, (DWORD*)&flags);
 		if (recvBytes == 0) {
-			ErrorHandling("RecvThread RecvHeader1 Error!");
+			//ErrorHandling("RecvThread RecvHeader1 Error!");
+			cout << "close" << endl;
+			closesocket(clntSock);
+			break;
 		}
 
 		switch (index - WSA_WAIT_EVENT_0) {
@@ -151,7 +155,10 @@ void RecvThread(SOCKET clntSock) {
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 					&overlapped, NULL) == SOCKET_ERROR) {
 					if (WSAGetLastError() != WSA_IO_PENDING)
+					{
 						ErrorHandling("RecvThread RecvHeader2 Error");
+					}
+
 				}
 				continue;	// 컨티뉴 안쓸 수 있는지 고민해보기
 			}
@@ -164,8 +171,10 @@ void RecvThread(SOCKET clntSock) {
 
 				if (WSARecv(clntSock, &recvBuf, 1, (DWORD*)&recvBytes, (DWORD *)&flags,
 					&overlapped, NULL) == SOCKET_ERROR) {
-					if (WSAGetLastError() != WSA_IO_PENDING)
+					if (WSAGetLastError() != WSA_IO_PENDING){
 						ErrorHandling("RecvThread RecvMessage1 Error");
+					}
+						
 				}
 				continue;	// 컨티뉴 안쓸 수 있는지 고민해보기
 			}
@@ -179,9 +188,6 @@ void RecvThread(SOCKET clntSock) {
 				case ID_ALLOC_FLAG:
 					copy(recvPacket.message, recvPacket.message + recvPacket.len,
 						clientNick[recvPacket.id]);
-
-					/*cout << "idallc recv : " << (int)recvPacket.flags << ", " << (int)recvPacket.id
-						<< ", " << (int)recvPacket.len << ", " << recvPacket.message << endl;*/
 
 					break;
 				case MESSAGE_FLAG:
@@ -234,6 +240,7 @@ void SendThread(SOCKET clntSock) {
 	int flags = 0;
 	int index = 0;
 	int messageLen = 0;
+	bool sendSet = true;
 
 	cin >> sendPacket.message;
 	messageLen = strlen(sendPacket.message);
@@ -252,7 +259,7 @@ void SendThread(SOCKET clntSock) {
 			ErrorHandling("SendThread send1 Error");
 	}
 
-	while (true) {
+	while (sendSet) {
 		WSAWaitForMultipleEvents(1, &wsaEvent, false, WSA_INFINITE, false);
 		WSAResetEvent(wsaEvent);
 		WSAGetOverlappedResult(clntSock, &overlapped,
@@ -268,16 +275,30 @@ void SendThread(SOCKET clntSock) {
 			// 본인이 입력한 채팅 메시지 출력
 			cout << "Me" << " : " << sendPacket.message << endl;
 			cin >> sendPacket.message;
-			messageLen = strlen(sendPacket.message);
 
-			sendPacket.len = messageLen;
-			sendPacket.id = myId;
-			sendPacket.flags = MESSAGE_FLAG;
+			if (!strcmp(sendPacket.message, "x")) {
+				sendPacket.len = 0;
+				sendPacket.id = myId;
+				sendPacket.flags = 2;
 
-			memset(&overlapped, 0, sizeof(overlapped));
-			overlapped.hEvent = wsaEvent;
-			sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
-			sendBuf.buf = (char*)&sendPacket;			
+				memset(&overlapped, 0, sizeof(overlapped));
+				overlapped.hEvent = wsaEvent;
+				sendBuf.len = LEN_ID_FLAGS_SIZE;
+				sendBuf.buf = (char*)&sendPacket;
+				sendSet = false;
+			}
+			else {
+				messageLen = strlen(sendPacket.message);
+
+				sendPacket.len = messageLen;
+				sendPacket.id = myId;
+				sendPacket.flags = MESSAGE_FLAG;
+
+				memset(&overlapped, 0, sizeof(overlapped));
+				overlapped.hEvent = wsaEvent;
+				sendBuf.len = messageLen + LEN_ID_FLAGS_SIZE;
+				sendBuf.buf = (char*)&sendPacket;
+			}
 
 			if (WSASend(clntSock, &sendBuf, 1, (DWORD*)&sendBytes, (DWORD)flags,
 				&overlapped, NULL) == SOCKET_ERROR) {
