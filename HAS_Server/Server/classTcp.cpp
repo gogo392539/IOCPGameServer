@@ -36,7 +36,8 @@ void TCPServer::clientAccept() {
 	//accept() and client에게 id값 전달 (연결 요청 수락)
 	while (*connectNum < CLIENT_MAX) {
 		clientTCPAddrsz = sizeof(clientTCPAddr);
-		clientState[*connectNum].clientTCPSock = accept(serverListenSock, (sockaddr*)&clientTCPAddr, &clientTCPAddrsz);
+		clientState[*connectNum].clientTCPSock = accept(serverListenSock,
+			(sockaddr*)&clientTCPAddr, &clientTCPAddrsz);
 		if (clientState[*connectNum].clientTCPSock == INVALID_SOCKET)
 			continue;
 
