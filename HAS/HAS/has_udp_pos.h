@@ -6,13 +6,13 @@ class UDPServer {
 private:
 	SOCKET serverUDPSock;
 	SOCKADDR_IN serverUDPAddr;
-	ClientState* clientState;
+	//ClientState* clientState;
 	std::thread recvUDPPosThread;
 	std::thread sendUDPPosThread;
 
 public:
+	//UDPServer();
 	UDPServer();
-	UDPServer(ClientState clients[]);
 	void serverStart();
 	void receiveClientAddr();
 	void recvThreadStart();
@@ -21,6 +21,6 @@ public:
 	void serverClosed();
 	void clientsAddrInit();
 
-	int recvPosThreadMain(ClientState clientState[], SOCKET serverUDPSock);
-	int sendPosThreadMain(ClientState clientState[], SOCKET serverUDPSock);
+	int recvPosThreadMain(SOCKET serverUDPSock);
+	int sendPosThreadMain(SOCKET serverUDPSock);
 };

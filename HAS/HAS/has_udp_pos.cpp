@@ -1,13 +1,8 @@
 #include "has_udp_pos.h"
 
 
-
 UDPServer::UDPServer() {
-
-}
-
-UDPServer::UDPServer(ClientState clients[]) {
-	clientState = clients;
+	
 }
 
 void UDPServer::serverStart() {
@@ -29,7 +24,7 @@ void UDPServer::receiveClientAddr() {
 	char* tempFlag = new char[4];
 	ZeroMemory(tempFlag, sizeof(int));
 	for (int i = 0; i < CLIENT_MAX; i++) {
-		iResult = recvfrom(serverUDPSock, tempFlag, sizeof(int), 0, (SOCKADDR*)&clientState[i].clientUDPAddr, &clientState[i].clientUDPAddrSize);
+		iResult = recvfrom(serverUDPSock, tempFlag, sizeof(int), 0, (SOCKADDR*)&clients[i].clientUDPAddr, &clients[i].clientUDPAddrSize);
 		if (iResult == SOCKET_ERROR) {
 			int ErrCode = WSAGetLastError();
 			if (ErrCode != WSA_IO_PENDING)
@@ -46,12 +41,12 @@ void UDPServer::receiveClientAddr() {
 
 void UDPServer::recvThreadStart() {
 	//recvUDPPosThread = thread(recvPosThread, clientState, serverUDPSock);
-	recvUDPPosThread = std::thread([&] {recvPosThreadMain(clientState, serverUDPSock); });
+	recvUDPPosThread = std::thread([&] {recvPosThreadMain(serverUDPSock); });
 }
 
 void UDPServer::sendThreadStart() {
 	//sendUDPPosThread = thread(sendPosThread, clientState, serverUDPSock, connectNum);			//이 경우에는 클래스의 멤버함수를 static으로 선언해야 한다.
-	sendUDPPosThread = std::thread([&] {sendPosThreadMain(clientState, serverUDPSock); });	//람다 식을 이용하여 클래스의 멤버 함수를 thread로 실행시킨다.
+	sendUDPPosThread = std::thread([&] {sendPosThreadMain(serverUDPSock); });	//람다 식을 이용하여 클래스의 멤버 함수를 thread로 실행시킨다.
 }
 
 void UDPServer::threadJoin() {
@@ -70,13 +65,13 @@ void UDPServer::serverClosed() {
 void UDPServer::clientsAddrInit()
 {
 	for (int i = 0; i < CLIENT_MAX; i++) {
-		clientState[i].pos = { -1, -1, -1, -1, -1, -1 };
-		ZeroMemory((char*)&clientState[i].clientUDPAddr, sizeof(clientState[i].clientUDPAddr));
-		clientState[i].clientUDPAddrSize = sizeof(clientState[i].clientUDPAddr);
+		clients[i].pos = { -1, -1, -1, -1, -1, -1 };
+		ZeroMemory((char*)&clients[i].clientUDPAddr, sizeof(clients[i].clientUDPAddr));
+		clients[i].clientUDPAddrSize = sizeof(clients[i].clientUDPAddr);
 	}
 }
 
-int UDPServer::recvPosThreadMain(ClientState clientState[], SOCKET serverUDPSock) {
+int UDPServer::recvPosThreadMain(SOCKET serverUDPSock) {
 	//클라이언트의 좌표 정보를 받아오는 thread
 	std::mutex mutex;
 
@@ -100,7 +95,7 @@ int UDPServer::recvPosThreadMain(ClientState clientState[], SOCKET serverUDPSock
 		memcpy(&tempId, recvBuf, sizeof(int));
 
 		mutex.lock();
-		memcpy(&clientState[tempId].pos, recvBuf + sizeof(int), sizeof(Pos));
+		memcpy(&clients[tempId].pos, recvBuf + sizeof(int), sizeof(Pos));
 		mutex.unlock();
 	}
 	delete[]recvBuf;
@@ -110,7 +105,7 @@ int UDPServer::recvPosThreadMain(ClientState clientState[], SOCKET serverUDPSock
 	return 0;
 }
 
-int UDPServer::sendPosThreadMain(ClientState clientState[], SOCKET serverUDPSock) {
+int UDPServer::sendPosThreadMain(SOCKET serverUDPSock) {
 	//클라이언트들에게 좌표 정보를 전달하는 thread
 	std::mutex mutex;
 
@@ -121,14 +116,14 @@ int UDPServer::sendPosThreadMain(ClientState clientState[], SOCKET serverUDPSock
 	while (true) {
 		for (int i = 0; i < CLIENT_MAX; i++) {
 			int iResult = 0;
-			if (clientState[i].id != -1) {
+			if (clients[i].id != -1) {
 				ZeroMemory(sendBuf, bufLen);
-				memcpy(sendBuf, &clientState[i], sizeof(int) + sizeof(Pos));
+				memcpy(sendBuf, &clients[i], sizeof(int) + sizeof(Pos));
 
 				for (int j = 0; j < CLIENT_MAX; j++) {
 
 					if (i != j) {
-						iResult = sendto(serverUDPSock, sendBuf, bufLen, 0, (SOCKADDR*)&clientState[j].clientUDPAddr, clientState[j].clientUDPAddrSize);
+						iResult = sendto(serverUDPSock, sendBuf, bufLen, 0, (SOCKADDR*)&clients[j].clientUDPAddr, clients[j].clientUDPAddrSize);
 						if (iResult == SOCKET_ERROR) {
 							ErrorHandling("UDP sendto");
 						}

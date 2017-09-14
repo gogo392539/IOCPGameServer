@@ -1,6 +1,7 @@
 #include "has_info.h"
 
 int clientCount = 0;
+ClientState clients[CLIENT_MAX];
 
 void ErrorHandling(string error) {
 	cout << error << " error" << endl;

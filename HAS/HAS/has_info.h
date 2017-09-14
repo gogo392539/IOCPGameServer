@@ -13,7 +13,7 @@
 
 #pragma comment (lib, "Ws2_32.lib")
 
-#define CLIENT_MAX 2
+#define CLIENT_MAX 4
 #define PUZZLE_MAX 8
 #define TRAP_MAX 5
 #define DEFAULT_PORT 36872
@@ -45,6 +45,8 @@ struct ClientState {
 	int clientUDPAddrSize;
 };
 
+extern ClientState clients[CLIENT_MAX];
+
 //클라이언트와 통신을 위한 패킷 정의
 struct eventPacket {
 	int flag;
@@ -56,7 +58,7 @@ struct eventPacket {
 struct PER_HANDLE_DATA {
 	SOCKET hasClientSock;
 	SOCKADDR_IN hasClientAddr;
-	ClientState* clients;
+	//ClientState* clients;
 	int id;
 	int *clientCount;
 };

@@ -4,13 +4,7 @@
 
 has_iocp_tcp::has_iocp_tcp()
 {
-}
-
-
-has_iocp_tcp::has_iocp_tcp(ClientState clients[])
-{
 	hasClientAddrsz = sizeof(hasListenAddr);
-	clientState = clients;
 	nZero = 0;
 }
 
@@ -29,7 +23,7 @@ void has_iocp_tcp::hasInit()
 	SYSTEM_INFO systemInfo;
 	GetSystemInfo(&systemInfo);
 
-	for (int i = 0; i < systemInfo.dwNumberOfProcessors; i++)
+	for (int i = 0; i < systemInfo.dwNumberOfProcessors + 5; i++)
 		_beginthreadex(NULL, 0, CompletionThread, (LPVOID)hCompletionPort, 0, NULL);
 
 	hasListenSock = WSASocket(PF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -56,17 +50,17 @@ void has_iocp_tcp::hasUserConnection()
 
 	while (clientCount < CLIENT_MAX) {
 		hasClientAddrsz = sizeof(hasClientAddr);
-		clientState[clientCount].clientTCPSock = accept(hasListenSock,
+		clients[clientCount].clientTCPSock = accept(hasListenSock,
 			(SOCKADDR*)&hasClientAddr, &hasClientAddrsz);
-		if (clientState[clientCount].clientTCPSock == INVALID_SOCKET) {
+		if (clients[clientCount].clientTCPSock == INVALID_SOCKET) {
 			ErrorHandling("accept");
 		}
 
-		clientState[clientCount].id = clientCount;
+		clients[clientCount].id = clientCount;
 		cout << "connect" << clientCount << endl;
 
-		int sendNum = sendn(clientState[clientCount].clientTCPSock,
-			(char*)&clientState[clientCount].id, sizeof(clientState[clientCount].id), 0);
+		int sendNum = sendn(clients[clientCount].clientTCPSock,
+			(char*)&clients[clientCount].id, sizeof(clients[clientCount].id), 0);
 		errorCodeCheck(sendNum, "send id error");
 		/*if (sendNum == SOCKET_ERROR) {
 			ErrorHandling("ID send ");
@@ -78,39 +72,37 @@ void has_iocp_tcp::hasUserConnection()
 		않고 직접 제공된 버퍼를 사용한다.
 		*/
 		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(clientState[clientCount].clientTCPSock, SOL_SOCKET, SO_RCVBUF,
+		if (SOCKET_ERROR == setsockopt(clients[clientCount].clientTCPSock, SOL_SOCKET, SO_RCVBUF,
 			(const char*)&nZero, sizeof(int))) {
 			ErrorHandling("setsockopt error");
 		}
 
-		nZero = 0;
-		if (SOCKET_ERROR == setsockopt(clientState[clientCount].clientTCPSock, SOL_SOCKET, SO_SNDBUF,
+		/*nZero = 0;
+		if (SOCKET_ERROR == setsockopt(clients[clientCount].clientTCPSock, SOL_SOCKET, SO_SNDBUF,
 			(const char*)&nZero, sizeof(int))) {
 			ErrorHandling("setsockopt error");
-		}
+		}*/
 
-		u_long mode = 1;
-		ioctlsocket(clientState[clientCount].clientTCPSock, FIONBIO, &mode);
+		//u_long mode = 1;
+		//ioctlsocket(clients[clientCount].clientTCPSock, FIONBIO, &mode);
 
 		PerHandleData = new PER_HANDLE_DATA();
-		PerHandleData->hasClientSock = clientState[clientCount].clientTCPSock;
+		PerHandleData->hasClientSock = clients[clientCount].clientTCPSock;
 		memcpy(&PerHandleData->hasClientAddr, &hasClientAddr, hasClientAddrsz);
 		PerHandleData->id = clientCount;
-		//PerHandleData->clientCount = userCount;
-		//cout << "accept user count : " << *(PerHandleData->clientCount) << endl;
-		PerHandleData->clients = clientState;
 
-		CreateIoCompletionPort((HANDLE)clientState[clientCount].clientTCPSock, hCompletionPort,
+		CreateIoCompletionPort((HANDLE)clients[clientCount].clientTCPSock, hCompletionPort,
 			(DWORD)PerHandleData, 0);
 
 		PerIoData = new PER_IO_DATA;
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
+		//PerIoData->wsaBuf.len = 0;
 		PerIoData->wsaBuf.len = EVENTPACKET_SIZE;
 		PerIoData->wsaBuf.buf = (char*)&PerIoData->eventpacket;
 
 		Flags = 0;
 
-		int result = WSARecv(clientState[clientCount].clientTCPSock, &PerIoData->wsaBuf, 1,
+		int result = WSARecv(clients[clientCount].clientTCPSock, &PerIoData->wsaBuf, 1,
 			&RecvBytes, &Flags, &PerIoData->overlapped, NULL);
 		if (SOCKET_ERROR == result)
 		{
@@ -131,9 +123,11 @@ void has_iocp_tcp::hasUserConnection()
 void has_iocp_tcp::sendRandomIdx()
 {
 	int arrayPos[CLIENT_MAX];
-	//randomPos(arrayPos);
+//	randomPos(arrayPos);
 	arrayPos[0] = 4;
 	arrayPos[1] = 10;
+	arrayPos[2] = 3;
+	arrayPos[3] = 2;
 	cout << "Raomdom Index : ";
 	for (int i = 0; i < CLIENT_MAX; i++) {
 		cout << arrayPos[i];
@@ -151,7 +145,7 @@ void has_iocp_tcp::sendRandomIdx()
 
 	for (int i = 0; i < CLIENT_MAX; i++) {
 		//client의 시작위치를 보낸다.		
-		int iResult = sendn(clientState[i].clientTCPSock, posData, dataLen, 0);
+		int iResult = sendn(clients[i].clientTCPSock, posData, dataLen, 0);
 		if (SOCKET_ERROR == iResult)
 		{
 			int ErrCode = WSAGetLastError();
@@ -196,7 +190,7 @@ void has_iocp_tcp::sendTaggerUserID()
 
 	int tempTagger = 0;
 	for (int i = 0; i < CLIENT_MAX; i++) {
-		int sendNum = sendn(clientState[i].clientTCPSock, (char*)&tempTagger, sizeof(int), 0);
+		int sendNum = sendn(clients[i].clientTCPSock, (char*)&tempTagger, sizeof(int), 0);
 	}
 	cout << "tagger user ID : " << tempTagger << endl;
 }
@@ -212,22 +206,9 @@ int has_iocp_tcp::selectTaggerUser()
 
 void has_iocp_tcp::hasClosed()
 {
-	/*for (int i = 0; i < CLIENT_MAX; i++) {
-		closesocket(clientState[i].clientTCPSock);
-	}*/
 	closesocket(hasListenSock);
 	WSACleanup();
 }
-
-//unsigned int __stdcall has_iocp_tcp::CompletionThread(HANDLE CompPortMem)
-//{
-//
-//
-//
-//
-//
-//	return 0;
-//}
 
 unsigned int __stdcall CompletionThread(HANDLE CompPort)
 {
@@ -238,7 +219,12 @@ unsigned int __stdcall CompletionThread(HANDLE CompPort)
 	DWORD BytesTransferred;
 	DWORD flags;
 
-	eventPacket packet;
+	/*eventPacket packet;
+	WSABUF sendBuf;
+	sendBuf.len = EVENTPACKET_SIZE;
+	sendBuf.buf = (char*)&packet;*/
+
+	int recvResult;
 
 	while (1) {
 		GetQueuedCompletionStatus(hCompletionPort, &BytesTransferred, (LPDWORD)&PerHandleData,
@@ -248,29 +234,94 @@ unsigned int __stdcall CompletionThread(HANDLE CompPort)
 			cout << "user#" << PerHandleData->id << " closed!" << endl;
 			mutex.lock();
 			clientCount--;
-			PerHandleData->clients[PerHandleData->id].id = -1;
+			clients[PerHandleData->id].id = -1;
 			mutex.unlock();
 			cout << "user count : " << clientCount << endl;
 			closesocket(PerHandleData->hasClientSock);
-			closesocket(PerHandleData->clients[PerHandleData->id].clientTCPSock);
-			PerHandleData->clients[PerHandleData->id].clientTCPSock = INVALID_SOCKET;
+			closesocket(clients[PerHandleData->id].clientTCPSock);
+			clients[PerHandleData->id].clientTCPSock = INVALID_SOCKET;
 			delete PerHandleData;
 			delete PerIoData;
 			continue;
-		//	break;
 		}
 
-		if (PerIoData->eventpacket.flag == 2) {
-			cout << "killed ID : " << PerIoData->eventpacket.id << endl;
-		}
+		//cout << "packet size : " << BytesTransferred << endl;
 
-		memcpy(&packet, &PerIoData->eventpacket, EVENTPACKET_SIZE);
-		for (int i = 0; i < CLIENT_MAX; i++) {
-			if (i != PerHandleData->id && 
-				PerHandleData->clients[PerHandleData->id].clientTCPSock != INVALID_SOCKET) {
-				sendn(PerHandleData->clients[i].clientTCPSock, (char*)&packet, 
-					EVENTPACKET_SIZE, 0);
+		if (BytesTransferred == EVENTPACKET_SIZE) {
+			
+			switch (PerIoData->eventpacket.flag) {
+			case 1:		//puzzle event 
+
+				cout << "Puzzle ID : " << PerIoData->eventpacket.id <<
+					" / Set : " << PerIoData->eventpacket.set << endl;
+
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 2:		// player kill event
+
+				cout << "killed ID : " << PerIoData->eventpacket.id << endl;
+
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 3:		// trap event
+
+				cout << "Trap ID : " << PerIoData->eventpacket.id <<
+					" / Set : " << PerIoData->eventpacket.set << endl;
+
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 4:		// animation namal
+				//cout << "n" << endl;
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 5:		// animation event
+				//cout << "e" << endl;
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 6:		// animation groundcheck
+				//cout << "g" << endl;
+				for (int i = 0; i < CLIENT_MAX; i++) {
+					if (PerHandleData->id != i) {
+						sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+							EVENTPACKET_SIZE, 0);
+					}
+				}
+				break;
+			case 7:		// cheat key
+				for (int i = 0; i < CLIENT_MAX; i++) {	
+					sendn(clients[i].clientTCPSock, (char*)&PerIoData->eventpacket,
+						EVENTPACKET_SIZE, 0);
+				}
+				break;
 			}
+		}
+		else {
+			cout << "packet size error" << endl;
 		}
 
 		memset(&PerIoData->overlapped, 0, sizeof(OVERLAPPED));
@@ -286,25 +337,24 @@ unsigned int __stdcall CompletionThread(HANDLE CompPort)
 		{
 			int ErrCode = WSAGetLastError();
 			if (ErrCode == WSA_IO_PENDING)
-			{
-				
-				//exit(1);
+			{		
+				// IO operation
 			}
 			else if (ErrCode == WSAECONNRESET) {
 				cout << "user#" << PerHandleData->id << " closed!" << endl;
 				mutex.lock();
 				clientCount--;
-				PerHandleData->clients[PerHandleData->id].id = -1;
+				clients[PerHandleData->id].id = -1;
 				mutex.unlock();
 				cout << "user count : " << clientCount << endl;
 				closesocket(PerHandleData->hasClientSock);
-				closesocket(PerHandleData->clients[PerHandleData->id].clientTCPSock);
-				PerHandleData->clients[PerHandleData->id].clientTCPSock = INVALID_SOCKET;
+				closesocket(clients[PerHandleData->id].clientTCPSock);
+				clients[PerHandleData->id].clientTCPSock = INVALID_SOCKET;
 				delete PerHandleData;
 				delete PerIoData;
 			}
 			else {
-				cout << "line 277" << endl;
+				cout << "line 337" << endl;
 				cout << "error code : " << ErrCode << endl;
 			}
 		}

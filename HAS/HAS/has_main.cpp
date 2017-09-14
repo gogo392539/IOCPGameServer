@@ -4,14 +4,19 @@
 
 int main(void) {
 
-	ClientState clientstate[CLIENT_MAX];
-	for (int i = 0; i < CLIENT_MAX; i++) {
+	//ClientState clientstate[CLIENT_MAX];
+	/*for (int i = 0; i < CLIENT_MAX; i++) {
 		clientstate[i].pos = { -1, -1, -1, -1, -1, -1 };
 		ZeroMemory((char*)&clientstate[i].clientUDPAddr, sizeof(clientstate[i].clientUDPAddr));
 		clientstate[i].clientUDPAddrSize = sizeof(clientstate[i].clientUDPAddr);
+	}*/
+
+	for (int i = 0; i < CLIENT_MAX; i++) {
+		clients[i].pos = { -1, -1, -1, -1, -1, -1 };
+		clients[i].clientUDPAddrSize = sizeof(clients[i].clientUDPAddr);
 	}
 
-	has_iocp_tcp hasIocpServer = has_iocp_tcp(clientstate);
+	has_iocp_tcp hasIocpServer = has_iocp_tcp();
 	hasIocpServer.hasInit();
 
 
@@ -20,7 +25,7 @@ int main(void) {
 		cout << "Server Start" << endl;
 		cout << endl;
 
-		UDPServer hasUDPServer = UDPServer(clientstate);
+		UDPServer hasUDPServer = UDPServer();
 		hasUDPServer.serverStart();
 
 		hasIocpServer.hasUserConnection();
